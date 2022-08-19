@@ -26,6 +26,7 @@ Rscript process_ifx.R
 Assumes a table of SNVs and MIC is present in "binary_table_T_anonymised.csv".
 
 ```
+unxz binary_table_T_anonymised.csv.xz
 ./process_bacteria_data.R
 ./process_antibio_ifx.R
 ```
