@@ -1,0 +1,8 @@
+#!/bin/bash
+
+export OUT_DIR="/home/kieran/work/infx_lasso_data/test_out"
+
+#parallel -j 16 -a 3_custom_run_predicttargets.test_arguments eval python /home/kieran/work/tscan_wrapper/predicttargets.py --out $OUT_DIR
+parallel -j 16 -a 3_custom_run_predicttargets.test_arguments eval python /home/kieran/work/infx_lasso_data/predicttargets.py --out $OUT_DIR
+
+#cat 3_custom_run_predicttargets.test_arguments | parallel --pipe -j 16 --colsep '\s' --group-by 4 xargs | sed "s/ --id/\n--id/g" | parallel -N1 -j1 python /home/kieran/work/tscan_wrapper/predicttargets.py --out $OUT_DIR {=uq=} {=uq=}
