@@ -5,7 +5,7 @@ require(dplyr)
 verbose <- TRUE
 lambda_min_ratio = 5e-2
 if (verbose) cat("Reading data set\n")
-Q <- readRDS("./Q1_binary.rds") # possibly not large enough for p > 1000
+Q <- readRDS("./sample_mat.rds") # possibly not large enough for p > 20,000
 
 
 args <- commandArgs(trailingOnly = TRUE)
