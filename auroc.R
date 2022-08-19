@@ -11,7 +11,7 @@ registerDoMC(cores=detectCores())
 source("generation_functions.R")
 source("summary_functions.R")
 
-path <- "~/work/data/simulated_rerun/3way/"
+path <- "./data/simulated_rerun/3way/"
 ensure_small_set_exists(path)
 all_effects = get_all_effects_for_dir(path, 3, 100, approximate_hierarchy = FALSE)
 

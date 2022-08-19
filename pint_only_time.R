@@ -3,8 +3,8 @@ library(Pint)
 
 num_features <- 500
 
-d <- readRDS("~/work/data/8k_only/n8000_p4000_SNR5_nbi40_nbij200_nlethals0_viol100_31386.rds")
-#d <- readRDS("~/work/data/simulated_small_data_sample/n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859.rds")
+d <- readRDS("./data/8k_only/n8000_p4000_SNR5_nbi40_nbij200_nlethals0_viol100_31386.rds")
+#d <- readRDS("./data/simulated_small_data_sample/n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859.rds")
 X <- d$X
 Y <- d$Y
 run_times = c()

@@ -10,9 +10,9 @@ library(reshape2)
 registerDoMC(cores=detectCores())
 
 source("regenerate_data.R")
-p100_dir <- "~/work/data/simulated_rerun/simulated_small_data_sample/"
+p100_dir <- "./data/simulated_rerun/simulated_small_data_sample/"
 ensure_p100_set_exists(p100_dir)
-dir_8k <- "~/work/data/simulated_rerun/8k_only/"
+dir_8k <- "./data/simulated_rerun/8k_only/"
 ensure_8k_set_exists(dir_8k)
 
 source("summary_functions.R")

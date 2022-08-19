@@ -24,6 +24,6 @@ foreach (SNR=c(2, 4, 8)) %:%
 
         set = generate_set(n, p, SNR, num_bi, num_bij, num_bijk, num_lethals)
 
-        saveRDS(set, file = sprintf("~/work/data/simulated_rerun/3way/n%d_p%d_SNR%d_nbi%d_nbij%d_nbijk%d_nlethals%d_%d.rds",
+        saveRDS(set, file = sprintf("./data/simulated_rerun/3way/n%d_p%d_SNR%d_nbi%d_nbij%d_nbijk%d_nlethals%d_%d.rds",
                            n, p, SNR, num_bi, num_bij, num_bijk, num_lethals, (runif(1) * 1e5) %>% floor))
     }

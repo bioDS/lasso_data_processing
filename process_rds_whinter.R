@@ -10,7 +10,7 @@ methods <- as.character(args[3])
 num_features <- as.numeric(args[4])
 print(sprintf("using %d features", num_features))
 
-# file="~/work/data/simulated_small_data_sample//n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859.rds"
+# file="./data/simulated_small_data_sample//n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859.rds"
 # output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859"
 # methods="all"
 # num_features=200

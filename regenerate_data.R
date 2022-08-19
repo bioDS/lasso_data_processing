@@ -75,6 +75,6 @@ ensure_wide_set_exists <- function(path) {
     }
 }
 
-ensure_p100_set_exists("~/work/data/simulated_rerun/simulated_small_data_sample/")
-ensure_8k_set_exists("~/work/data/simulated_rerun/8k_only/")
-ensure_wide_set_exists("~/work/data/simulated_rerun/wide_only/")
+ensure_p100_set_exists("./data/simulated_rerun/simulated_small_data_sample/")
+ensure_8k_set_exists("./data/simulated_rerun/8k_only/")
+ensure_wide_set_exists("./data/simulated_rerun/wide_only/")

@@ -17,7 +17,7 @@ source("3way_check_functions.R")
 # big3_pr = rbind(results$big3_pr, results2$big3_pr)
 
 ## data_dir <- "3way_data_to_run"
-data_dir <- "~/work/data/simulated_rerun/3way/"
+data_dir <- "./data/simulated_rerun/3way/"
 
 big2_pr <- data.frame()
 big3_pr <- data.frame()
