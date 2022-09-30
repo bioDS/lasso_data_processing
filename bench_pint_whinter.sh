@@ -19,6 +19,7 @@ run_sets_on_methods() {
         mkdir -p $set_dir
       fi
       taskset -c $threads bash -c "./process_rds_whinter.R $bench_sets_dir/$bench_set $set_dir $methods $num_features" &> $set_dir/log.txt
+      #echo taskset -c $threads bash -c "./process_rds_whinter.R $bench_sets_dir/$bench_set $set_dir $methods $num_features"
     done
   done
 }
@@ -27,14 +28,14 @@ run_sets_on_methods() {
 #set="simulated_small_data"
 
 # to reproduce current paper figures:
-num_features=60
+num_features=1000
 sets="simulated_small_data_sample"
 methods="all"
 threads="0"
 
 run_sets_on_methods
 #
-num_features=240
+num_features=1000
 sets="8k_only"
 methods="all"
 threads="0-7,16-23"
@@ -42,7 +43,7 @@ run_sets_on_methods
 
 # new wide comparison
 
-num_features=600
+num_features=1000
 sets="wide_only"
 methods="noglint"
 

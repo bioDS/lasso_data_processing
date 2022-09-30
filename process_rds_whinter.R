@@ -79,8 +79,8 @@ output_last <- output %>% filter(X0 == max(output[1]))
 
 names(output_last) <- c("X0", "lambda", "gene_i", "gene_j", "strength")
 whinter_effects <- output_last %>% select(gene_i, gene_j, strength)
-whinter_effects$gene_i <- effects$gene_i + 1
-whinter_effects$gene_j <- effects$gene_j + 1
+whinter_effects$gene_i <- whinter_effects$gene_i + 1
+whinter_effects$gene_j <- whinter_effects$gene_j + 1
 
 
 print("checking accuracy of results")
@@ -89,30 +89,32 @@ print("checking accuracy of results")
 
 whinter_fx_main <- whinter_effects %>%
   filter(gene_i == gene_j) %>%
-  mutate(type = "main", found = TRUE) %>%
+  mutate(found = TRUE) %>%
   full_join(bi_ind, by = "gene_i") %>%
   mutate(TP = !is.na(coef)) %>%
   mutate(found = !is.na(strength)) %>%
   mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
+  mutate(type = "main") %>%
   select(gene_i, gene_j, type, lethal, found, TP, strength)
-whinter_fx_main[is.na(whinter_fx_main$strength),]$strength <- 0
+  whinter_fx_main[is.na(whinter_fx_main$strength),]$strength <- 0
 
 whinter_fx_int  <- whinter_effects %>%
   filter(gene_i != gene_j)
 
 if (nrow(whinter_fx_int) > 0) {
-  whinter_fx_int <- whinter_fx_int %>% mutate(type = "int", found = TRUE) %>%
+  whinter_fx_int <- whinter_fx_int %>% mutate(found = TRUE) %>%
     full_join(bij_ind, by = c("gene_i","gene_j")) %>%
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
+    mutate(type = "interaction") %>%
     select(gene_i, gene_j, type, lethal, found, TP, strength)
   whinter_fx_int[is.na(whinter_fx_int$strength),]$strength <- 0
 } else {
   whinter_fx_int <- NA
 }
 Z <- cbind(X[, whinter_fx_main[["gene_i"]]])
-if (nrow(interactions) > 0) {
+if (nrow(whinter_fx_int) > 0) {
   for (i in 1:nrow(whinter_fx_int)) {
     Z <- cbind(Z, X[, whinter_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, whinter_fx_int[i, ][["gene_j"]], drop = FALSE])
   }
@@ -142,14 +144,15 @@ pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_featur
 
 pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
   arrange(gene_i) %>%
-  mutate(type = "main", gene_j = NA) %>%
+  mutate(gene_j = NA) %>%
   full_join(bi_ind, by = "gene_i") %>%
   mutate(TP = !is.na(coef)) %>%
   mutate(found = !is.na(strength)) %>%
   mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
-  select(gene_i, gene_j, type, TP, found, lethal, strength) %>%
+  select(gene_i, gene_j, TP, found, lethal, strength) %>%
   arrange(desc(TP)) %>%
   arrange(desc(lethal)) %>%
+  mutate(type = "main") %>%
   tbl_df()
 pint_fx_main[is.na(pint_fx_main$strength),]$strength <- 0
 if (length(fit$pairwise$effects$strength) > 0) {
@@ -159,7 +162,6 @@ if (length(fit$pairwise$effects$strength) > 0) {
   ) %>%
     arrange(gene_i) %>%
     ## left_join(., obs, by = c("gene_i", "gene_j")) %>%
-    mutate(type = "interaction") %>%
     rowwise() %>%
     full_join(., rbind(bij_ind, lethal_ind), by = c("gene_i", "gene_j")) %>%
     ungroup() %>%
@@ -168,15 +170,16 @@ if (length(fit$pairwise$effects$strength) > 0) {
     mutate(lethal = (coef == lethal_coef)) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
-    select(gene_i, gene_j, type, TP, found, lethal, strength) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength) %>%
     distinct(gene_i, gene_j, .keep_all = TRUE) %>%
+    mutate(type = "interaction") %>%
     tbl_df()
   pint_fx_int[is.na(pint_fx_int$strength),]$strength <- 0
 } else {
   pint_fx_int <- NA
 }
 Z <- cbind(X[, pint_fx_main[["gene_i"]]])
-if (nrow(interactions) > 0) {
+if (nrow(pint_fx_int) > 0) {
   for (i in 1:nrow(pint_fx_int)) {
     Z <- cbind(Z, X[, pint_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, pint_fx_int[i, ][["gene_j"]], drop = FALSE])
   }
@@ -225,14 +228,15 @@ if (methods == "noglint") {
     strength = cf$mainEffectsCoef$cont %>% lapply(., function(x) x[[1]]) %>% unlist()
   ) %>%
     arrange(gene_i) %>%
-    mutate(type = "main", gene_j = NA) %>%
+    mutate(gene_j = NA) %>%
     full_join(bi_ind, by = "gene_i") %>%
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
-    select(gene_i, gene_j, type, TP, found, lethal, strength) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
+    mutate(type = "main") %>%
     tbl_df()
   glint_fx_main[is.na(glint_fx_main$strength),]$strength <- 0
 
@@ -242,16 +246,16 @@ if (methods == "noglint") {
   ) %>%
     arrange(gene_i) %>%
     ## left_join(., obs, by = c("gene_i", "gene_j")) %>%
-    mutate(type = "interaction") %>%
     rowwise() %>%
     full_join(., rbind(bij_ind, lethal_ind), by = c("gene_i", "gene_j")) %>%
     ungroup() %>%
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = (coef == lethal_coef)) %>%
-    select(gene_i, gene_j, type, TP, found, lethal, strength) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
+    mutate(type = "interaction") %>%
     tbl_df()
   glint_fx_int[is.na(glint_fx_int$strength),]$strength <- 0
 
