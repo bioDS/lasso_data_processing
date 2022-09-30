@@ -40,6 +40,11 @@ base_time <- system.time(
     effects_nohierarchy <- get_all_effects_for_dir(effects_dir, 2, 100, approximate_hierarchy = FALSE)
 )
 
+print("hierarchy time")
+print(hierarchy_time)
+print("base time")
+print(base_time)
+
 summarise_effects <- function(effects, num_true_effects) {
     summary <- foreach(effect = effects, true_total=num_true_effects, .combine='rbind') %do% {
         num_tp = sum(effect$TP)
