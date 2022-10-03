@@ -2,18 +2,22 @@
 library(dplyr)
 library(Pint)
 library(glinternet)
+require(Matrix)
+library(torch)
 
 args <- commandArgs(trailingOnly = TRUE)
 file <- as.character(args[1])
 output_dir <- as.character(args[2])
 methods <- as.character(args[3])
 num_features <- as.numeric(args[4])
+depth <- as.numeric(args[5])
 print(sprintf("using %d features", num_features))
 
 # file="./data/simulated_small_data_sample//n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859.rds"
 # output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859"
 # methods="all"
 # num_features=200
+# depth = 3
 
 lethal_coef <- -1000
 lambda_min_ratio <- 0.01 # for glinternet only
@@ -87,14 +91,18 @@ print("checking accuracy of results")
 
 ## WHInter ********************************************************************************************************
 
+
+all_i <- data.frame(gene_i = 1:p)
+
 whinter_fx_main <- whinter_effects %>%
   filter(gene_i == gene_j) %>%
   mutate(found = TRUE) %>%
-  full_join(bi_ind, by = "gene_i") %>%
+  full_join(bi_ind |> select(gene_i, coef), by = "gene_i") %>%
   mutate(TP = !is.na(coef)) %>%
   mutate(found = !is.na(strength)) %>%
   mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
   mutate(type = "main") %>%
+  full_join(main_obs, by=c("gene_i", "gene_j")) %>%
   select(gene_i, gene_j, type, lethal, found, TP, strength)
   whinter_fx_main[is.na(whinter_fx_main$strength),]$strength <- 0
 
@@ -102,6 +110,7 @@ whinter_fx_int  <- whinter_effects %>%
   filter(gene_i != gene_j)
 
 if (nrow(whinter_fx_int) > 0) {
+  all_ij <- as_array(torch_combinations(torch_tensor(1:p), 2))
   whinter_fx_int <- whinter_fx_int %>% mutate(found = TRUE) %>%
     full_join(bij_ind, by = c("gene_i","gene_j")) %>%
     mutate(TP = !is.na(coef)) %>%
@@ -140,7 +149,7 @@ print("running Pint for comparison")
 
 ## Pint ********************************************************************************************************
 
-pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, depth = 2))
+pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, depth = depth))
 
 pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
   arrange(gene_i) %>%
