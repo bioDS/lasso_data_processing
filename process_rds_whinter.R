@@ -1,9 +1,9 @@
 #!/usr/bin/env Rscript
-library(dplyr)
-library(Pint)
-library(glinternet)
+require(dplyr)
+require(Pint)
+require(glinternet)
 require(Matrix)
-library(torch)
+require(torch)
 
 args <- commandArgs(trailingOnly = TRUE)
 file <- as.character(args[1])
@@ -13,11 +13,11 @@ num_features <- as.numeric(args[4])
 depth <- as.numeric(args[5])
 print(sprintf("using %d features", num_features))
 
-# file="./data/simulated_small_data_sample//n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859.rds"
-# output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_SNR10_nbi0_nbij100_nlethals0_viol0_33859"
-# methods="all"
-# num_features=200
-# depth = 3
+file="./data/simulated_small_data_sample/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_30687.rds"
+output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_30687"
+methods="all"
+num_features=200
+depth = 3
 
 lethal_coef <- -1000
 lambda_min_ratio <- 0.01 # for glinternet only
@@ -45,7 +45,7 @@ if (is.na(sum(Y))) {
 }
 
 if (!dir.exists(output_dir)) {
-  dir.create(output_dir)
+  dir.create(output_dir, recursive=TRUE)
 }
 setwd(output_dir)
 
@@ -92,7 +92,7 @@ print("checking accuracy of results")
 ## WHInter ********************************************************************************************************
 
 
-all_i <- data.frame(gene_i = 1:p)
+all_i <- data.frame(gene_i = 1:p) |> mutate(gene_j = gene_i)
 
 whinter_fx_main <- whinter_effects %>%
   filter(gene_i == gene_j) %>%
@@ -101,31 +101,42 @@ whinter_fx_main <- whinter_effects %>%
   mutate(TP = !is.na(coef)) %>%
   mutate(found = !is.na(strength)) %>%
   mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
+  full_join(all_i, by=c("gene_i", "gene_j")) %>%
   mutate(type = "main") %>%
-  full_join(main_obs, by=c("gene_i", "gene_j")) %>%
   select(gene_i, gene_j, type, lethal, found, TP, strength)
   whinter_fx_main[is.na(whinter_fx_main$strength),]$strength <- 0
+  whinter_fx_main[is.na(whinter_fx_main$TP),]$TP <- FALSE
+  whinter_fx_main[is.na(whinter_fx_main$found),]$found <- FALSE
+  whinter_fx_main[is.na(whinter_fx_main$lethal),]$lethal <- FALSE
+whinter_fx_main$gene_j <- NA
 
 whinter_fx_int  <- whinter_effects %>%
   filter(gene_i != gene_j)
 
 if (nrow(whinter_fx_int) > 0) {
   all_ij <- as_array(torch_combinations(torch_tensor(1:p), 2))
+  all_ij <- data.frame(gene_i = all_ij[,1], gene_j = all_ij[,2])
   whinter_fx_int <- whinter_fx_int %>% mutate(found = TRUE) %>%
     full_join(bij_ind, by = c("gene_i","gene_j")) %>%
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
+    full_join(all_ij, by=c("gene_i", "gene_j")) %>%
     mutate(type = "interaction") %>%
     select(gene_i, gene_j, type, lethal, found, TP, strength)
   whinter_fx_int[is.na(whinter_fx_int$strength),]$strength <- 0
+  whinter_fx_int[is.na(whinter_fx_int$TP),]$TP <- FALSE
+  whinter_fx_int[is.na(whinter_fx_int$found),]$found <- FALSE
+  whinter_fx_int[is.na(whinter_fx_int$lethal),]$lethal <- FALSE
 } else {
   whinter_fx_int <- NA
 }
-Z <- cbind(X[, whinter_fx_main[["gene_i"]]])
-if (nrow(whinter_fx_int) > 0) {
-  for (i in 1:nrow(whinter_fx_int)) {
-    Z <- cbind(Z, X[, whinter_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, whinter_fx_int[i, ][["gene_j"]], drop = FALSE])
+found_fx_main <- whinter_fx_main |> filter(found==TRUE)
+found_fx_int <- whinter_fx_int |> filter(found==TRUE)
+Z <- cbind(X[, (found_fx_main)[["gene_i"]]])
+if (nrow(found_fx_int) > 0) {
+  for (i in 1:nrow(found_fx_int)) {
+    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
   }
 }
 Z <- as.matrix(Z)
@@ -151,6 +162,7 @@ print("running Pint for comparison")
 
 pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, depth = depth))
 
+all_i$gene_j <- NA
 pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
   arrange(gene_i) %>%
   mutate(gene_j = NA) %>%
@@ -161,9 +173,13 @@ pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = f
   select(gene_i, gene_j, TP, found, lethal, strength) %>%
   arrange(desc(TP)) %>%
   arrange(desc(lethal)) %>%
+  full_join(all_i, by=c("gene_i", "gene_j")) %>%
   mutate(type = "main") %>%
   tbl_df()
 pint_fx_main[is.na(pint_fx_main$strength),]$strength <- 0
+pint_fx_main[is.na(pint_fx_main$TP),]$TP <- FALSE
+pint_fx_main[is.na(pint_fx_main$found),]$found <- FALSE
+pint_fx_main[is.na(pint_fx_main$lethal),]$lethal <- FALSE
 if (length(fit$pairwise$effects$strength) > 0) {
   pint_fx_int <- data.frame(
     gene_i = as.numeric(fit$pairwise$effects$i), gene_j = as.numeric(fit$pairwise$effects$j),
@@ -181,16 +197,22 @@ if (length(fit$pairwise$effects$strength) > 0) {
     arrange(desc(lethal)) %>%
     select(gene_i, gene_j, TP, found, lethal, strength) %>%
     distinct(gene_i, gene_j, .keep_all = TRUE) %>%
+    full_join(all_ij, by=c("gene_i", "gene_j")) %>%
     mutate(type = "interaction") %>%
     tbl_df()
   pint_fx_int[is.na(pint_fx_int$strength),]$strength <- 0
+  pint_fx_int[is.na(pint_fx_int$TP),]$TP <- FALSE
+  pint_fx_int[is.na(pint_fx_int$found),]$found <- FALSE
+  pint_fx_int[is.na(pint_fx_int$lethal),]$lethal <- FALSE
 } else {
   pint_fx_int <- NA
 }
-Z <- cbind(X[, pint_fx_main[["gene_i"]]])
-if (nrow(pint_fx_int) > 0) {
-  for (i in 1:nrow(pint_fx_int)) {
-    Z <- cbind(Z, X[, pint_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, pint_fx_int[i, ][["gene_j"]], drop = FALSE])
+found_fx_main <- pint_fx_main |> filter(found==TRUE)
+found_fx_int <- pint_fx_int |> filter(found==TRUE)
+Z <- cbind(X[, found_fx_main[["gene_i"]]])
+if (nrow(found_fx_int) > 0) {
+  for (i in 1:nrow(found_fx_int)) {
+    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
   }
 }
 Z <- as.matrix(Z)
@@ -245,9 +267,13 @@ if (methods == "noglint") {
     select(gene_i, gene_j, TP, found, lethal, strength) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
+    full_join(all_i, by=c("gene_i", "gene_j")) %>%
     mutate(type = "main") %>%
     tbl_df()
   glint_fx_main[is.na(glint_fx_main$strength),]$strength <- 0
+  glint_fx_main[is.na(glint_fx_main$TP),]$TP <- FALSE
+  glint_fx_main[is.na(glint_fx_main$found),]$found <- FALSE
+  glint_fx_main[is.na(glint_fx_main$lethal),]$lethal <- FALSE
 
   glint_fx_int <- data.frame(
     gene_i = cf$interactions$contcont[, 1], gene_j = cf$interactions$contcont[, 2],
@@ -265,14 +291,20 @@ if (methods == "noglint") {
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
     mutate(type = "interaction") %>%
+    full_join(all_ij, by=c("gene_i", "gene_j")) %>%
     tbl_df()
   glint_fx_int[is.na(glint_fx_int$strength),]$strength <- 0
+  glint_fx_int[is.na(glint_fx_int$TP),]$TP <- FALSE
+  glint_fx_int[is.na(glint_fx_int$found),]$found <- FALSE
+  glint_fx_int[is.na(glint_fx_int$lethal),]$lethal <- FALSE
 
 
+  found_fx_main <- glint_fx_main |> filter(found==TRUE)
+  found_fx_int <- glint_fx_int |> filter(found==TRUE)
   ## Statistical test if b_i and b_ij are sig. > 0
-  Z <- cbind(X[, glint_fx_main[["gene_i"]]])
-  for (i in 1:nrow(glint_fx_int)) {
-    Z <- cbind(Z, X[, glint_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, glint_fx_int[i, ][["gene_j"]], drop = FALSE])
+  Z <- cbind(X[, found_fx_main[["gene_i"]]])
+  for (i in 1:nrow(found_fx_int)) {
+    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
   }
   Z <- as.matrix(Z)
   colnames(Z) <- rownames(Z) <- NULL
