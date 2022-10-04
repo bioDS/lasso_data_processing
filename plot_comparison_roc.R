@@ -82,6 +82,10 @@ for (bench_set in bench_sets) {
     all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% { set$whinter_smry }
     all_glint_smrys <- foreach(set = output, .combine = rbind) %do% { set$glint_smry }
 
+    plot_dir <- "plots/rocs/"
+    if (! dir.exists(plot_dir)) {
+      dir.create(plot_dir, recursive=TRUE)
+    }
     plot_rocs(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "all", TRUE, sprintf("plots/rocs/all_comparison_roc_%s.pdf", bench_set))
     plot_rocs(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "main", TRUE, sprintf("plots/rocs/main_comparison_roc_%s.pdf", bench_set))
     plot_rocs(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "interaction", TRUE, sprintf("plots/rocs/int_comparison_roc_%s.pdf", bench_set))
