@@ -28,18 +28,18 @@ run_sets_on_methods() {
 #set="simulated_small_data"
 
 # to reproduce current paper figures:
-#depth=2
-#num_features=1000
-#sets="simulated_small_data_sample"
-#methods="all"
-#threads="0"
-#
-#run_sets_on_methods
+depth=2
+num_features=1000
+sets="simulated_small_data_sample"
+methods="all"
+threads="0"
+
+run_sets_on_methods
 ##
 #num_features=1000
 #sets="8k_only"
 #methods="all"
-#threads="0-7,16-23"
+#threads="0-95"
 #run_sets_on_methods
 #
 ## new wide comparison
@@ -48,7 +48,7 @@ run_sets_on_methods() {
 #sets="wide_only"
 #methods="noglint"
 #
-#threads="0-7,16-23"
+#threads="0-95"
 #run_sets_on_methods
 
 # three-way comparison

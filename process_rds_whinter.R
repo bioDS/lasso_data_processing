@@ -13,11 +13,11 @@ num_features <- as.numeric(args[4])
 depth <- as.numeric(args[5])
 print(sprintf("using %d features", num_features))
 
-file="./data/simulated_small_data_sample/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_30687.rds"
-output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_30687"
-methods="all"
-num_features=200
-depth = 3
+#file="~/work/lasso_data_processing/data/simulated_small_data_sample//n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_13846.rds"
+#output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_13846"
+#methods="all"
+#num_features=1000
+#depth=3
 
 lethal_coef <- -1000
 lambda_min_ratio <- 0.01 # for glinternet only
@@ -326,10 +326,10 @@ if (methods == "noglint") {
 
 ## summary ***********************************************************************************************************
 
-print("whinter")
-whinter_fx_int %>% data.frame()
-print("pint")
-pint_fx_int %>% data.frame()
+#print("whinter")
+#whinter_fx_int %>% data.frame()
+#print("pint")
+#pint_fx_int %>% data.frame()
 
 saveRDS(list(
   whinter_fx_int = whinter_fx_int,
