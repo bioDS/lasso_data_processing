@@ -120,6 +120,7 @@ for (bench_set in bench_sets) {
     ggsave(time_plot, file=sprintf("plots/bench_times_%s.pdf", bench_set), width = 4, height = 4)
 }
 
+use_glint=TRUE
 plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "all", TRUE, sprintf("plots/rocs/all_sets_comparison_roc.pdf"))
 plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "main", TRUE, sprintf("plots/rocs/main_comparison_roc.pdf"))
 plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "interaction", TRUE, sprintf("plots/rocs/int_comparison_roc.pdf"))
