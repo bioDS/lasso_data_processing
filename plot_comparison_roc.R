@@ -5,12 +5,14 @@ library(dplyr)
 library(foreach)
 library(doMC)
 library(ggplot2)
+library(reshape2)
 
 source("summary_functions.R")
 
 registerDoMC(cores=detectCores())
 
-bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only", "3way")
+#bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only", "3way")
+bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only")
 
 plot_rocs <- function(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_type, include_FN, output_filename) {
     ## main only
@@ -60,6 +62,10 @@ plot_rocs <- function(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_gl
     ggsave(roc_plot, file = output_filename, width = 5, height = 3)
 }
 
+all_sets_pint_summaries <- c()
+all_sets_whinter_summaries <- c()
+all_sets_glint_summaries <- c()
+all_sets_times <- c()
 for (bench_set in bench_sets) {
     if (bench_set == "wide_only") {
         use_glint = FALSE
@@ -82,6 +88,15 @@ for (bench_set in bench_sets) {
     all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% { set$whinter_smry }
     all_glint_smrys <- foreach(set = output, .combine = rbind) %do% { set$glint_smry }
 
+    all_sets_pint_summaries <- rbind(all_sets_pint_summaries, all_pint_smrys)
+    all_sets_whinter_summaries <- rbind(all_sets_whinter_summaries, all_whinter_smrys)
+    all_sets_glint_summaries <- rbind(all_sets_glint_summaries, all_glint_smrys)
+
+    all_times <- foreach(out = output, .combine = rbind) %do% {
+      data.frame(pint = out$pint_time[3], whinter = out$whinter_time[3], glint = out$glint_time[3])
+    }
+    all_sets_times <- rbind(all_sets_times, all_times)
+
     plot_dir <- "plots/rocs/"
     if (! dir.exists(plot_dir)) {
       dir.create(plot_dir, recursive=TRUE)
@@ -93,4 +108,32 @@ for (bench_set in bench_sets) {
     plot_rocs(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "all", FALSE, sprintf("plots/rocs/all_comparison_roc_%s_FoundOnly.pdf", bench_set))
     plot_rocs(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "main", FALSE, sprintf("plots/rocs/main_comparison_roc_%s_FoundOnly.pdf", bench_set))
     plot_rocs(all_pint_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "interaction", FALSE, sprintf("plots/rocs/int_comparison_roc_%s_FoundOnly.pdf", bench_set))
+
+    # set times
+    melted_times <- melt(all_times, value.name = "Time", variable.name = "Method")
+    time_plot <- ggplot(melted_times, aes(x = Method, y = Time)) +
+        geom_boxplot() +
+        theme_bw() +
+        scale_y_continuous(trans = "log2") +
+        ylab("Time (s)") +
+        expand_limits(y = 0)
+    ggsave(time_plot, file=sprintf("plots/bench_times_%s.pdf", bench_set), width = 4, height = 4)
 }
+
+plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "all", TRUE, sprintf("plots/rocs/all_sets_comparison_roc.pdf"))
+plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "main", TRUE, sprintf("plots/rocs/main_comparison_roc.pdf"))
+plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "interaction", TRUE, sprintf("plots/rocs/int_comparison_roc.pdf"))
+
+plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "all", FALSE, sprintf("plots/rocs/all_sets_comparison_roc_FoundOnly.pdf"))
+plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "main", FALSE, sprintf("plots/rocs/main_comparison_roc_FoundOnly.pdf"))
+plot_rocs(all_sets_pint_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "interaction", FALSE, sprintf("plots/rocs/int_comparison_roc_FoundOnly.pdf"))
+
+# plot times
+melted_times <- melt(all_sets_times, value.name = "Time", variable.name = "Method")
+time_plot <- ggplot(melted_times, aes(x = Method, y = Time)) +
+    geom_boxplot() +
+    theme_bw() +
+    scale_y_continuous(trans = "log2") +
+    ylab("Time (s)") +
+    expand_limits(y = 0)
+ggsave(time_plot, file="plots/all_bench_times.pdf", width = 4, height = 4)
