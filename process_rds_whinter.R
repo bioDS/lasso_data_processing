@@ -11,13 +11,15 @@ output_dir <- as.character(args[2])
 methods <- as.character(args[3])
 num_features <- as.numeric(args[4])
 depth <- as.numeric(args[5])
+num_threads <- as.numeric(args[6])
 print(sprintf("using %d features", num_features))
 
-#file="/home/kel63/work/data/simulated_rerun/8k_only//n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924.rds"
-#output_dir="whinter_pint_comparison/8k_only//summaries/n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924"
+#file="/home/kel63/work/data/simulated_rerun/8k_only//n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_22543.rds"
+#output_dir="whinter_pint_comparison/8k_only//summaries/n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_22543"
 #methods="all"
-#num_features=7980000
+#num_features=5000
 #depth=2
+#num_threads=96
 
 lethal_coef <- -1000
 lambda_min_ratio <- 0.01 # for glinternet only
@@ -162,76 +164,71 @@ print("running Pint for comparison")
 
 ## Pint ********************************************************************************************************
 
-pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = -1))
-
-all_i$gene_j <- NA
-pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
-  arrange(gene_i) %>%
-  mutate(gene_j = NA) %>%
-  full_join(bi_ind, by = "gene_i") %>%
-  mutate(TP = !is.na(coef)) %>%
-  mutate(found = !is.na(strength)) %>%
-  mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
-  select(gene_i, gene_j, TP, found, lethal, strength) %>%
-  arrange(desc(TP)) %>%
-  arrange(desc(lethal)) %>%
-  full_join(all_i, by=c("gene_i", "gene_j")) %>%
-  mutate(type = "main") %>%
-  tbl_df()
-pint_fx_main[is.na(pint_fx_main$strength),]$strength <- 0
-pint_fx_main[is.na(pint_fx_main$TP),]$TP <- FALSE
-pint_fx_main[is.na(pint_fx_main$found),]$found <- FALSE
-pint_fx_main[is.na(pint_fx_main$lethal),]$lethal <- FALSE
-if (length(fit$pairwise$effects$strength) > 0) {
-  pint_fx_int <- data.frame(
-    gene_i = as.numeric(fit$pairwise$effects$i), gene_j = as.numeric(fit$pairwise$effects$j),
-    strength = fit$pairwise$effects$strength %>% unlist()
-  ) %>%
+get_pint_smry <- function(fit) {
+  all_i$gene_j <- NA
+  pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
     arrange(gene_i) %>%
-    ## left_join(., obs, by = c("gene_i", "gene_j")) %>%
-    rowwise() %>%
-    full_join(., rbind(bij_ind, lethal_ind), by = c("gene_i", "gene_j")) %>%
-    ungroup() %>%
+    mutate(gene_j = NA) %>%
+    full_join(bi_ind, by = "gene_i") %>%
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
-    mutate(lethal = (coef == lethal_coef)) %>%
+    mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
-    select(gene_i, gene_j, TP, found, lethal, strength) %>%
-    distinct(gene_i, gene_j, .keep_all = TRUE) %>%
-    full_join(all_ij, by=c("gene_i", "gene_j")) %>%
-    mutate(type = "interaction") %>%
+    full_join(all_i, by=c("gene_i", "gene_j")) %>%
+    mutate(type = "main") %>%
     tbl_df()
-  pint_fx_int[is.na(pint_fx_int$strength),]$strength <- 0
-  pint_fx_int[is.na(pint_fx_int$TP),]$TP <- FALSE
-  pint_fx_int[is.na(pint_fx_int$found),]$found <- FALSE
-  pint_fx_int[is.na(pint_fx_int$lethal),]$lethal <- FALSE
-} else {
-  pint_fx_int <- NA
+  pint_fx_main[is.na(pint_fx_main$strength),]$strength <- 0
+  pint_fx_main[is.na(pint_fx_main$TP),]$TP <- FALSE
+  pint_fx_main[is.na(pint_fx_main$found),]$found <- FALSE
+  pint_fx_main[is.na(pint_fx_main$lethal),]$lethal <- FALSE
+  if (length(fit$pairwise$effects$strength) > 0) {
+    pint_fx_int <- data.frame(
+      gene_i = as.numeric(fit$pairwise$effects$i), gene_j = as.numeric(fit$pairwise$effects$j),
+      strength = fit$pairwise$effects$strength %>% unlist()
+    ) %>%
+      arrange(gene_i) %>%
+      ## left_join(., obs, by = c("gene_i", "gene_j")) %>%
+      rowwise() %>%
+      full_join(., rbind(bij_ind, lethal_ind), by = c("gene_i", "gene_j")) %>%
+      ungroup() %>%
+      mutate(TP = !is.na(coef)) %>%
+      mutate(found = !is.na(strength)) %>%
+      mutate(lethal = (coef == lethal_coef)) %>%
+      arrange(desc(TP)) %>%
+      arrange(desc(lethal)) %>%
+      select(gene_i, gene_j, TP, found, lethal, strength) %>%
+      distinct(gene_i, gene_j, .keep_all = TRUE) %>%
+      full_join(all_ij, by=c("gene_i", "gene_j")) %>%
+      mutate(type = "interaction") %>%
+      tbl_df()
+    pint_fx_int[is.na(pint_fx_int$strength),]$strength <- 0
+    pint_fx_int[is.na(pint_fx_int$TP),]$TP <- FALSE
+    pint_fx_int[is.na(pint_fx_int$found),]$found <- FALSE
+    pint_fx_int[is.na(pint_fx_int$lethal),]$lethal <- FALSE
+  } else {
+    pint_fx_int <- NA
+  }
+  pint_smry <- rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .)
+  return(pint_smry)
 }
-#found_fx_main <- pint_fx_main |> filter(found==TRUE)
-#found_fx_int <- pint_fx_int |> filter(found==TRUE)
-#Z <- cbind(X[, found_fx_main[["gene_i"]]])
-#if (nrow(found_fx_int) > 0) {
-#  for (i in 1:nrow(found_fx_int)) {
-#    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
-#  }
-#}
-#Z <- as.matrix(Z)
-#colnames(Z) <- rownames(Z) <- NULL
-#Ynum <- as.numeric(Y)
-#ols_time <- system.time(fit_red <- lm(Ynum ~ Z))
-#
-#pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
-#  filter(!is.na(coef)) %>%
-#  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
-#  tbl_df()
-#
-#pint_smry <- left_join(rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .), pvals, by = "id") %>%
-#  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
-#  rename(coef.est = coef) #%>%
-#  ## left_join(., obs, by = c("gene_i", "gene_j"))
-pint_smry <- rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .)
+
+pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads))
+pint_smry <- get_pint_smry(fit)
+
+## Pint w/ hierarchy assumption
+pint_hierarchy_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, approximate_hierarchy = TRUE))
+pint_hierarchy_smry <- get_pint_smry(fit)
+
+## Pint w/ duplicate removal
+pint_dedup_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, check_duplicates = TRUE))
+pint_dedup_smry <- get_pint_smry(fit)
+
+## Pint w/ estimate unbiased
+pint_unbiased_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, estimate_unbiased = TRUE))
+pint_unbiased_smry <- get_pint_smry(fit$estimate_unbiased)
+
 
 ## glinternet ********************************************************************************************************
 
@@ -250,7 +247,7 @@ if (methods == "noglint") {
     numLevels = rep(1, p),
     family = "gaussian",
     numToFind = num_features,
-    nLambda = max_lambdas, numCores = 32, lambdaMinRatio = lambda_min_ratio, verbose = TRUE
+    nLambda = max_lambdas, numCores = num_threads, lambdaMinRatio = lambda_min_ratio, verbose = TRUE
   ))
 
   cf <- coef(fit, lambdaType = "lambdaHat") # lambdaIndex = 50)#
@@ -343,7 +340,13 @@ saveRDS(list(
   pint_fx_int = pint_fx_int,
   pint_fx_main = pint_fx_main,
   pint_time = pint_time,
+  pint_unbiased_time = pint_unbiased_time,
+  pint_dedup_time = pint_dedup_time,
+  pint_hierarchy_time = pint_hierarchy_time,
   pint_smry = pint_smry,
+  pint_hierarchy_smry = pint_hierarchy_smry,
+  pint_dedup_smry = pint_dedup_smry,
+  pint_unbiased_smry = pint_unbiased_smry,
   glint_fx_int = glint_fx_int,
   glint_fx_main = glint_fx_main,
   glint_time = glint_time,
@@ -355,8 +358,11 @@ saveRDS(list(
 print("summarising")
 
 print(sprintf("there were %d true interactions\n", nrow(bij_ind)))
-print(sprintf("Pint suggested %d in %.3fs, %d of which were correct", nrow(pint_fx_int), pint_time[3], nrow(pint_fx_int %>% filter(TP == TRUE))))
-print(sprintf("Whinter suggested %d in %.3fs, %d of which were correct", nrow(whinter_fx_int), whinter_time[3], nrow(whinter_fx_int %>% filter(TP == TRUE))))
+print(sprintf("Pint suggested %d in %.3fs, %d of which were correct", nrow(pint_smry |> filter(found == TRUE)), pint_time[3], nrow(pint_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Pint (hierarchy) suggested %d in %.3fs, %d of which were correct", nrow(pint_hierarchy_smry |> filter(found == TRUE)), pint_hierarchy_time[3], nrow(pint_hierarchy_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Pint (dedup) suggested %d in %.3fs, %d of which were correct", nrow(pint_dedup_smry |> filter(found == TRUE)), pint_dedup_time[3], nrow(pint_dedup_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Pint (unbiased) suggested %d in %.3fs, %d of which were correct", nrow(pint_unbiased_smry |> filter(found == TRUE)), pint_unbiased_time[3], nrow(pint_unbiased_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Whinter suggested %d in %.3fs, %d of which were correct", nrow(whinter_smry |> filter(found == TRUE)), whinter_time[3], nrow(whinter_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
 if (methods != "noglint") {
-  print(sprintf("glinternet suggested %d in %.3fs, %d of which were correct", nrow(glint_fx_int), glint_time[3], nrow(glint_fx_int %>% filter(TP == TRUE))))
+  print(sprintf("glinternet suggested %d in %.3fs, %d of which were correct", nrow(glint_smry |> filter(found == TRUE)), glint_time[3], nrow(glint_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
 }
