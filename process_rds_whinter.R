@@ -13,14 +13,15 @@ num_features <- as.numeric(args[4])
 depth <- as.numeric(args[5])
 print(sprintf("using %d features", num_features))
 
-#file="~/work/lasso_data_processing/data/simulated_small_data_sample//n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_13846.rds"
-#output_dir="whinter_pint_comparison/simulated_small_data_sample//summaries/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_13846"
+#file="/home/kel63/work/data/simulated_rerun/8k_only//n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924.rds"
+#output_dir="whinter_pint_comparison/8k_only//summaries/n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924"
 #methods="all"
-#num_features=1000
-#depth=3
+#num_features=7980000
+#depth=2
 
 lethal_coef <- -1000
 lambda_min_ratio <- 0.01 # for glinternet only
+max_lambdas = 200
 
 whinter_bin <- "~/work/lasso_data_processing/WHInter/src/train_WHInter"
 convert_format <- "~/work/lasso_data_processing/convert_format.py"
@@ -64,7 +65,7 @@ if (!file.exists("converted.tsv")) {
 }
 
 print("running whinter")
-command <- sprintf("%s -pathResults ./results/ -useBias 0 -lambdaMinRatio 0.01 -nlambda 200 -eps 0.01 -maxSelectedFeatures %d converted.tsv", whinter_bin, num_features)
+command <- sprintf("%s -pathResults ./results/ -useBias 0 -lambdaMinRatio 0.01 -nlambda %d -eps 0.01 -maxSelectedFeatures %d converted.tsv", whinter_bin, max_lambdas, num_features)
 cat(getwd(), ":", command, "\n")
 
 if (!dir.exists("results")) {
@@ -131,27 +132,28 @@ if (nrow(whinter_fx_int) > 0) {
 } else {
   whinter_fx_int <- NA
 }
-found_fx_main <- whinter_fx_main |> filter(found==TRUE)
-found_fx_int <- whinter_fx_int |> filter(found==TRUE)
-Z <- cbind(X[, (found_fx_main)[["gene_i"]]])
-if (nrow(found_fx_int) > 0) {
-  for (i in 1:nrow(found_fx_int)) {
-    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
-  }
-}
-Z <- as.matrix(Z)
-colnames(Z) <- rownames(Z) <- NULL
-Ynum <- as.numeric(Y)
-ols_time <- system.time(fit_red <- lm(Ynum ~ Z))
+#found_fx_main <- whinter_fx_main |> filter(found==TRUE)
+#found_fx_int <- whinter_fx_int |> filter(found==TRUE)
+#Z <- cbind(X[, (found_fx_main)[["gene_i"]]])
+#if (nrow(found_fx_int) > 0) {
+#  for (i in 1:nrow(found_fx_int)) {
+#    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
+#  }
+#}
+#Z <- as.matrix(Z)
+#colnames(Z) <- rownames(Z) <- NULL
+#Ynum <- as.numeric(Y)
+#ols_time <- system.time(fit_red <- lm(Ynum ~ Z))
 
-pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
-  filter(!is.na(coef)) %>%
-  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
-  tbl_df()
-whinter_smry <- left_join(rbind(whinter_fx_main, whinter_fx_int) %>% data.frame(id = 1:nrow(.), .), pvals, by = "id") %>%
-  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
-  rename(coef.est = coef) #%>%
+#pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
+#  filter(!is.na(coef)) %>%
+#  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
+#  tbl_df()
+#whinter_smry <- left_join(rbind(whinter_fx_main, whinter_fx_int) %>% data.frame(id = 1:nrow(.), .), pvals, by = "id") %>%
+#  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+#  rename(coef.est = coef) #%>%
   ## left_join(., obs, by = c("gene_i", "gene_j"))
+whinter_smry <- rbind(whinter_fx_main, whinter_fx_int) %>% data.frame(id = 1:nrow(.), .)
 
 
 saveRDS(list(whinter_fx_int = whinter_fx_int, time = time, smry = whinter_smry), "whinter_fx_int.rds")
@@ -160,7 +162,7 @@ print("running Pint for comparison")
 
 ## Pint ********************************************************************************************************
 
-pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, depth = depth))
+pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = -1))
 
 all_i$gene_j <- NA
 pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
@@ -207,28 +209,29 @@ if (length(fit$pairwise$effects$strength) > 0) {
 } else {
   pint_fx_int <- NA
 }
-found_fx_main <- pint_fx_main |> filter(found==TRUE)
-found_fx_int <- pint_fx_int |> filter(found==TRUE)
-Z <- cbind(X[, found_fx_main[["gene_i"]]])
-if (nrow(found_fx_int) > 0) {
-  for (i in 1:nrow(found_fx_int)) {
-    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
-  }
-}
-Z <- as.matrix(Z)
-colnames(Z) <- rownames(Z) <- NULL
-Ynum <- as.numeric(Y)
-ols_time <- system.time(fit_red <- lm(Ynum ~ Z))
-
-pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
-  filter(!is.na(coef)) %>%
-  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
-  tbl_df()
-
-pint_smry <- left_join(rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .), pvals, by = "id") %>%
-  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
-  rename(coef.est = coef) #%>%
-  ## left_join(., obs, by = c("gene_i", "gene_j"))
+#found_fx_main <- pint_fx_main |> filter(found==TRUE)
+#found_fx_int <- pint_fx_int |> filter(found==TRUE)
+#Z <- cbind(X[, found_fx_main[["gene_i"]]])
+#if (nrow(found_fx_int) > 0) {
+#  for (i in 1:nrow(found_fx_int)) {
+#    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
+#  }
+#}
+#Z <- as.matrix(Z)
+#colnames(Z) <- rownames(Z) <- NULL
+#Ynum <- as.numeric(Y)
+#ols_time <- system.time(fit_red <- lm(Ynum ~ Z))
+#
+#pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
+#  filter(!is.na(coef)) %>%
+#  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
+#  tbl_df()
+#
+#pint_smry <- left_join(rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .), pvals, by = "id") %>%
+#  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+#  rename(coef.est = coef) #%>%
+#  ## left_join(., obs, by = c("gene_i", "gene_j"))
+pint_smry <- rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .)
 
 ## glinternet ********************************************************************************************************
 
@@ -247,7 +250,7 @@ if (methods == "noglint") {
     numLevels = rep(1, p),
     family = "gaussian",
     numToFind = num_features,
-    nLambda = 50, numCores = 32, lambdaMinRatio = lambda_min_ratio, verbose = TRUE
+    nLambda = max_lambdas, numCores = 32, lambdaMinRatio = lambda_min_ratio, verbose = TRUE
   ))
 
   cf <- coef(fit, lambdaType = "lambdaHat") # lambdaIndex = 50)#
@@ -299,28 +302,29 @@ if (methods == "noglint") {
   glint_fx_int[is.na(glint_fx_int$lethal),]$lethal <- FALSE
 
 
-  found_fx_main <- glint_fx_main |> filter(found==TRUE)
-  found_fx_int <- glint_fx_int |> filter(found==TRUE)
-  ## Statistical test if b_i and b_ij are sig. > 0
-  Z <- cbind(X[, found_fx_main[["gene_i"]]])
-  for (i in 1:nrow(found_fx_int)) {
-    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
-  }
-  Z <- as.matrix(Z)
-  colnames(Z) <- rownames(Z) <- NULL
-  Ynum <- as.numeric(Y)
-  fit_red <- lm(Ynum ~ Z)
+  #found_fx_main <- glint_fx_main |> filter(found==TRUE)
+  #found_fx_int <- glint_fx_int |> filter(found==TRUE)
+  ### Statistical test if b_i and b_ij are sig. > 0
+  #Z <- cbind(X[, found_fx_main[["gene_i"]]])
+  #for (i in 1:nrow(found_fx_int)) {
+  #  Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
+  #}
+  #Z <- as.matrix(Z)
+  #colnames(Z) <- rownames(Z) <- NULL
+  #Ynum <- as.numeric(Y)
+  #fit_red <- lm(Ynum ~ Z)
 
 
-  glint_pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
-    filter(!is.na(coef)) %>%
-    data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
-    tbl_df()
+  #glint_pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
+  #  filter(!is.na(coef)) %>%
+  #  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
+  #  tbl_df()
 
-  glint_smry <- left_join(rbind(glint_fx_main, glint_fx_int) %>% data.frame(id = 1:nrow(.), .), glint_pvals, by = "id") %>%
-    mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
-    rename(coef.est = coef) #%>%
-    ## left_join(., obs, by = c("gene_i", "gene_j"))
+  #glint_smry <- left_join(rbind(glint_fx_main, glint_fx_int) %>% data.frame(id = 1:nrow(.), .), glint_pvals, by = "id") %>%
+  #  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
+  #  rename(coef.est = coef) #%>%
+  #  ## left_join(., obs, by = c("gene_i", "gene_j"))
+  glint_smry <- rbind(glint_fx_main, glint_fx_int) %>% data.frame(id = 1:nrow(.), .)
 }
 
 
