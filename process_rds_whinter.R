@@ -14,12 +14,19 @@ depth <- as.numeric(args[5])
 num_threads <- as.numeric(args[6])
 print(sprintf("using %d features", num_features))
 
-#file="/home/kel63/work/data/simulated_rerun/8k_only//n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_22543.rds"
-#output_dir="whinter_pint_comparison/8k_only//summaries/n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_22543"
+#file="/home/kel63/work/data/simulated_rerun/8k_only//n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924.rds"
+#output_dir="whinter_pint_comparison/8k_only//summaries/n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924"
 #methods="all"
 #num_features=5000
 #depth=2
 #num_threads=96
+
+#file="/home/kel63/work/data/simulated_rerun/simulated_small_data_sample/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_10918.rds"
+#output_dir="whinter_pint_comparison/simulated_small_data_sample/summaries/n1000_p100_nbi10_nbij50_nbijk0_nlethals0_viol100_snr5_10918.rds"
+#methods="all"
+#num_features=1000
+#depth=2
+#num_threads=1
 
 lethal_coef <- -1000
 lambda_min_ratio <- 0.01 # for glinternet only
@@ -95,10 +102,11 @@ print("checking accuracy of results")
 ## WHInter ********************************************************************************************************
 
 
-all_i <- data.frame(gene_i = 1:p) |> mutate(gene_j = gene_i)
+all_i <- data.frame(gene_i = 1:p) |> mutate(gene_j = NA)
 
 whinter_fx_main <- whinter_effects %>%
   filter(gene_i == gene_j) %>%
+  mutate(gene_j = NA) %>%
   mutate(found = TRUE) %>%
   full_join(bi_ind |> select(gene_i, coef), by = "gene_i") %>%
   mutate(TP = !is.na(coef)) %>%
@@ -290,8 +298,8 @@ if (methods == "noglint") {
     select(gene_i, gene_j, TP, found, lethal, strength) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
-    mutate(type = "interaction") %>%
     full_join(all_ij, by=c("gene_i", "gene_j")) %>%
+    mutate(type = "interaction") %>%
     tbl_df()
   glint_fx_int[is.na(glint_fx_int$strength),]$strength <- 0
   glint_fx_int[is.na(glint_fx_int$TP),]$TP <- FALSE
@@ -333,12 +341,8 @@ if (methods == "noglint") {
 #pint_fx_int %>% data.frame()
 
 saveRDS(list(
-  whinter_fx_int = whinter_fx_int,
-  whinter_fx_main = whinter_fx_main,
   whinter_time = whinter_time,
   whinter_smry = whinter_smry,
-  pint_fx_int = pint_fx_int,
-  pint_fx_main = pint_fx_main,
   pint_time = pint_time,
   pint_unbiased_time = pint_unbiased_time,
   pint_dedup_time = pint_dedup_time,
@@ -347,8 +351,6 @@ saveRDS(list(
   pint_hierarchy_smry = pint_hierarchy_smry,
   pint_dedup_smry = pint_dedup_smry,
   pint_unbiased_smry = pint_unbiased_smry,
-  glint_fx_int = glint_fx_int,
-  glint_fx_main = glint_fx_main,
   glint_time = glint_time,
   glint_smry = glint_smry,
   bij = bij_ind,
