@@ -56,9 +56,9 @@ plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_s
 
     if (use_glint) {
       roc_list = list(Pint = pint_roc,
-                    Pint_Hierarchy = pint_hierarchy_roc,
-                    Pint_Dedup = pint_dedup_roc,
-                    Pint_Unbiased = pint_unbiased_roc,
+                    "Pint hierarchy" = pint_hierarchy_roc,
+                    #Pint_Dedup = pint_dedup_roc,
+                    #Pint_Unbiased = pint_unbiased_roc,
                     Whinter = whinter_roc,
                     Glinternet = glint_roc)
       glint_annotation =  sprintf("Glinternet auc: %.2f", round(glint_roc$auc, digits = 2))
@@ -72,9 +72,9 @@ plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_s
         theme_bw() +
         geom_segment(x = -1, y = 0, xend = 0, yend = 1, color = "#4c72b0") +
         annotate("text", x = 0.2, y = 0.6, label = sprintf("Pint auc: %.2f", round(pint_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.5, label = sprintf("Pint_Hierarchy auc: %.2f", round(pint_hierarchy_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint_Dedup auc: %.2f", round(pint_dedup_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.5, label = sprintf("Pint hierarchy auc: %.2f", round(pint_hierarchy_roc$auc, digits = 2))) +
+        ## annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint_Dedup auc: %.2f", round(pint_dedup_roc$auc, digits = 2))) +
+        ## annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.2, label = sprintf("Whinter auc: %.2f", round(whinter_roc$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.1, label = glint_annotation)
     ggsave(roc_plot, file = output_filename, width = 7, height = 5)
@@ -110,22 +110,38 @@ for (bench_set in bench_sets) {
     all_pint_dedup_smrys <- foreach(set = output, .combine = rbind) %do% { set$pint_dedup_smry }
     all_pint_unbiased_smrys <- foreach(set = output, .combine = rbind) %do% { set$pint_unbiased_smry }
     all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% { set$whinter_smry }
-    all_glint_smrys <- foreach(set = output, .combine = rbind) %do% { set$glint_smry }
+    if (use_glint) {
+        all_glint_smrys <- foreach(set = output, .combine = rbind) %do% { set$glint_smry }
+    } else {
+      all_glint_smrys = NA
+    }
 
     all_sets_pint_summaries <- rbind(all_sets_pint_summaries, all_pint_smrys)
     all_sets_pint_hierarchy_summaries <- rbind(all_sets_pint_hierarchy_summaries, all_pint_hierarchy_smrys)
     all_sets_pint_dedup_summaries <- rbind(all_sets_pint_dedup_summaries, all_pint_dedup_smrys)
     all_sets_pint_unbiased_summaries <- rbind(all_sets_pint_unbiased_summaries, all_pint_unbiased_smrys)
     all_sets_whinter_summaries <- rbind(all_sets_whinter_summaries, all_whinter_smrys)
-    all_sets_glint_summaries <- rbind(all_sets_glint_summaries, all_glint_smrys)
+    if (use_glint) {
+        all_sets_glint_summaries <- rbind(all_sets_glint_summaries, all_glint_smrys)
+    }
 
-    all_times <- foreach(out = output, .combine = rbind) %do% {
-      data.frame(pint = out$pint_time[3],
-                pint_hierarchy = out$pint_hierarchy_time[3],
-                pint_dedup = out$pint_dedup_time[3],
-                pint_unbiased = out$pint_unbiased_time[3],
-                whinter = out$whinter_time[3],
-                glint = out$glint_time[3])
+      if (use_glint) {
+        all_times <- foreach(out = output, .combine = rbind) %do% {
+            data.frame(pint = out$pint_time[3],
+                        pint_hierarchy = out$pint_hierarchy_time[3],
+                        pint_dedup = out$pint_dedup_time[3],
+                        pint_unbiased = out$pint_unbiased_time[3],
+                        whinter = out$whinter_time[3],
+                        glint = out$glint_time[3])
+            }
+      } else {
+        all_times <- foreach(out = output, .combine = rbind) %do% {
+            data.frame(pint = out$pint_time[3],
+                        pint_hierarchy = out$pint_hierarchy_time[3],
+                        pint_dedup = out$pint_dedup_time[3],
+                        pint_unbiased = out$pint_unbiased_time[3],
+                        whinter = out$whinter_time[3])
+      }
     }
     all_sets_times <- rbind(all_sets_times, all_times)
 
@@ -142,7 +158,11 @@ for (bench_set in bench_sets) {
     plot_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, all_glint_smrys, all_whinter_smrys, use_glint, "interaction", FALSE, sprintf("plots/rocs/int_comparison_roc_%s_FoundOnly.pdf", bench_set))
 
     # set times
-    melted_times <- melt(all_times, value.name = "Time", variable.name = "Method")
+    if (use_glint) {
+        melted_times <- melt(all_times |> select(pint, pint_hierarchy, whinter, glint), value.name = "Time", variable.name = "Method")
+    } else {
+        melted_times <- melt(all_times |> select(pint, pint_hierarchy, whinter), value.name = "Time", variable.name = "Method")
+    }
     time_plot <- ggplot(melted_times, aes(x = Method, y = Time)) +
         geom_boxplot() +
         theme_bw() +
@@ -150,6 +170,20 @@ for (bench_set in bench_sets) {
         ylab("Time (s)") +
         expand_limits(y = 0)
     ggsave(time_plot, file=sprintf("plots/bench_times_%s.pdf", bench_set), width = 4, height = 4)
+    write.csv(summary(all_times), file=sprintf("times_summary_%s.csv", bench_set))
+        if (use_glint) {
+            mean_effects_found = data.frame(
+                whinter = sum(all_whinter_smrys$found)/length(rds_files),
+                pint = sum(all_pint_smrys$found)/length(rds_files),
+                glinternet = sum(all_glint_smrys$found)/length(rds_files)
+            )
+        } else {
+            mean_effects_found = data.frame(
+                whinter = sum(all_whinter_smrys$found)/length(rds_files),
+                pint = sum(all_pint_smrys$found)/length(rds_files),
+            )
+        }
+    write.csv(mean_effects_found, file=sprintf("mean_effects_found_%s.csv", bench_set))
 }
 
 use_glint=TRUE
@@ -170,3 +204,5 @@ time_plot <- ggplot(melted_times, aes(x = Method, y = Time)) +
     ylab("Time (s)") +
     expand_limits(y = 0)
 ggsave(time_plot, file="plots/all_bench_times.pdf", width = 6, height = 4)
+
+write.csv(summary(all_sets_times), file=sprintf("times_summary_all_sets.csv", bench_set))
