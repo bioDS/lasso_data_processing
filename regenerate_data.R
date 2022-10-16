@@ -55,6 +55,13 @@ generate_sets <- function(path, num, size = "large", threeway = FALSE) {
         num_bi = 10
         num_bij = 100
         num_bijk = 1000
+    } else if (size == "wide_10k") {
+        n = 1000
+        p = 10000
+        snr = 5
+        num_bi = 100
+        num_bij = 500
+        num_bijk = 0
     }
     else {
         print("invalid size")
@@ -92,7 +99,7 @@ ensure_wide_set_exists <- function(path) {
     }
     existing_files = list.files(path)
     if (length(existing_files) == 0) {
-        generate_sets(path, 10, "wide")
+        generate_sets(path, 10, "wide_10k")
     }
 }
 
@@ -108,5 +115,5 @@ ensure_3way_set_exists <- function(path) {
 
 ensure_p100_set_exists("./data/simulated_rerun/simulated_small_data_sample/")
 ensure_8k_set_exists("./data/simulated_rerun/8k_only/")
-ensure_wide_set_exists("./data/simulated_rerun/wide_only/")
+ensure_wide_set_exists("./data/simulated_rerun/wide_only_10k/")
 ensure_3way_set_exists("./data/simulated_rerun/3way/")
