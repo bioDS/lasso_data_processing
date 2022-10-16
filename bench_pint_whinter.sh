@@ -40,22 +40,20 @@ taskset_threads="0"
 use_cores="1"
 run_sets_on_methods
 
-##
-#depth=2
-#num_features=5000
-#sets="8k_only"
-#methods="all"
-#taskset_threads="0-95"
-#use_cores="96"
-#run_sets_on_methods
-#
-## new wide comparison
+depth=2
+num_features=5000
+sets="8k_only"
+methods="all"
+taskset_threads="0-95"
+use_cores="48"
+run_sets_on_methods
 
-num_features=10000
-sets="wide_only"
+## new wide comparison
+num_features=5000
+sets="wide_only_10k"
 methods="noglint"
 taskset_threads="0-95"
-use_cores="1"
+use_cores="48"
 run_sets_on_methods
 
 # three-way comparison
