@@ -151,9 +151,6 @@ plot_pint_equiv_vs_tp <- function(pint, include_FN, output_filename) {
     pint <- all_pint_smrys |> filter(type == "3way")
     if (include_FN == FALSE) {
       pint <- pint |> filter(found == TRUE)
-      pint_hierarchy <- pint_hierarchy |> filter(found == TRUE)
-      pint_dedup <- pint_dedup |> filter(found == TRUE)
-      pint_unbiased <- pint_unbiased |> filter(found == TRUE)
     }
     pint_tp_roc <- roc(response = pint$TP, predict = abs(pint$strength))
     pint_equiv_roc <- roc(response = (pint$equiv_tp | pint$TP), predict = abs(pint$strength))
