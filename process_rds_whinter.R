@@ -4,6 +4,12 @@ require(Pint)
 require(glinternet)
 require(Matrix)
 require(torch)
+library(digest)
+library(doParallel)
+
+no_cores <- detectCores()
+cl <- makeCluster(no_cores)
+registerDoParallel(cl)
 
 args <- commandArgs(trailingOnly = TRUE)
 file <- as.character(args[1])
@@ -14,6 +20,13 @@ depth <- as.numeric(args[5])
 num_threads <- as.numeric(args[6])
 print(sprintf("using %d features", num_features))
 
+#file="~/work/data/simulated_rerun/3way//n4000_p400_nbi10_nbij100_nbijk1000_nlethals0_viol100_snr5_10948.rds"
+#output_dir="whinter_pint_comparison/3way//summaries/n4000_p400_nbi10_nbij100_nbijk1000_nlethals0_viol100_snr5_10948"
+#methods="noglint"
+#num_features=5000
+#depth=3
+#num_threads=48
+#
 #file="/home/kel63/work/data/simulated_rerun/8k_only//n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924.rds"
 #output_dir="whinter_pint_comparison/8k_only//summaries/n8000_p4000_nbi40_nbij200_nbijk0_nlethals0_viol100_snr5_12924"
 #methods="all"
@@ -46,6 +59,7 @@ Y <- data$Y
 obs <- data$obs
 bi_ind <- data$bi_ind
 bij_ind <- data$bij_ind
+bijk_ind <- data$bijk_ind
 lethal_ind <- data$lethal_ind
 p <- ncol(X)
 
@@ -99,6 +113,59 @@ whinter_effects$gene_j <- whinter_effects$gene_j + 1
 
 print("checking accuracy of results")
 
+## handy functions
+
+get_3way_hash <- function(i, j, k, X) {
+  return(digest::sha1(X[,i] * X[,j] * X[,k]))
+}
+
+tp_main_hashes <- foreach(i=1:nrow(bi_ind), .combine=rbind) %do% {
+  get_3way_hash(bi_ind[i,]$gene_i, bi_ind[i,]$gene_i, bi_ind[i,]$gene_i, X)
+}
+tp_pair_hashes <- foreach(i=1:nrow(bij_ind), .combine=rbind) %do% {
+  get_3way_hash(bij_ind[i,]$gene_i, bij_ind[i,]$gene_j, bij_ind[i,]$gene_i, X)
+}
+if (depth == 3) {
+  tp_trip_hashes <- foreach(i=1:nrow(bijk_ind), .combine=rbind) %do% {
+    get_3way_hash(bijk_ind[i,]$gene_i, bijk_ind[i,]$gene_j, bijk_ind[i,]$gene_k, X)
+  }
+  tp_hashes <- rbind(tp_main_hashes, tp_pair_hashes, tp_trip_hashes)
+  rm(tp_trip_hashes)
+} else {
+  tp_hashes <- rbind(tp_main_hashes, tp_pair_hashes)
+}
+rm(tp_main_hashes)
+rm(tp_pair_hashes)
+
+get_equiv_tp <- function(fx_set, X, tp_hashes, depth) {
+  found_set <- fx_set |> filter(found==TRUE)
+  i_inds <- found_set$gene_i
+  if (is.na(found_set$gene_j[1])) {
+    j_inds <- i_inds
+  } else {
+    j_inds <- found_set$gene_j
+  }
+  if (depth < 3) {
+    k_inds <- i_inds
+  }else {
+    if (is.na(found_set$gene_k[1])) {
+      k_inds <- i_inds
+    } else {
+      k_inds <- found_set$gene_k
+    }
+  }
+
+  hashes <- foreach(i=1:nrow(found_set), .combine=rbind) %do% {
+    get_3way_hash(i_inds[i], j_inds[i], k_inds[i], X)
+  }
+  fx_set$equiv_tp <- fx_set$TP
+
+  equiv_tp <- hashes %in% tp_hashes
+
+  fx_set[fx_set$found == TRUE,]$equiv_tp <- equiv_tp
+  return(fx_set$equiv_tp)
+}
+
 ## WHInter ********************************************************************************************************
 
 
@@ -120,6 +187,7 @@ whinter_fx_main <- whinter_effects %>%
   whinter_fx_main[is.na(whinter_fx_main$found),]$found <- FALSE
   whinter_fx_main[is.na(whinter_fx_main$lethal),]$lethal <- FALSE
 whinter_fx_main$gene_j <- NA
+whinter_fx_main$equiv_tp <- get_equiv_tp(whinter_fx_main, X, tp_hashes, 2)
 
 whinter_fx_int  <- whinter_effects %>%
   filter(gene_i != gene_j)
@@ -139,6 +207,7 @@ if (nrow(whinter_fx_int) > 0) {
   whinter_fx_int[is.na(whinter_fx_int$TP),]$TP <- FALSE
   whinter_fx_int[is.na(whinter_fx_int$found),]$found <- FALSE
   whinter_fx_int[is.na(whinter_fx_int$lethal),]$lethal <- FALSE
+  whinter_fx_int$equiv_tp <- get_equiv_tp(whinter_fx_int, X, tp_hashes, 2)
 } else {
   whinter_fx_int <- NA
 }
@@ -172,7 +241,7 @@ print("running Pint for comparison")
 
 ## Pint ********************************************************************************************************
 
-get_pint_smry <- function(fit) {
+get_pint_smry <- function(fit, depth) {
   all_i$gene_j <- NA
   pint_fx_main <- data.frame(gene_i = as.numeric(fit$main$effects$i), strength = fit$main$effects$strength) %>%
     arrange(gene_i) %>%
@@ -191,6 +260,7 @@ get_pint_smry <- function(fit) {
   pint_fx_main[is.na(pint_fx_main$TP),]$TP <- FALSE
   pint_fx_main[is.na(pint_fx_main$found),]$found <- FALSE
   pint_fx_main[is.na(pint_fx_main$lethal),]$lethal <- FALSE
+  pint_fx_main$equiv_tp <- get_equiv_tp(pint_fx_main, X, tp_hashes, 2)
   if (length(fit$pairwise$effects$strength) > 0) {
     pint_fx_int <- data.frame(
       gene_i = as.numeric(fit$pairwise$effects$i), gene_j = as.numeric(fit$pairwise$effects$j),
@@ -215,27 +285,57 @@ get_pint_smry <- function(fit) {
     pint_fx_int[is.na(pint_fx_int$TP),]$TP <- FALSE
     pint_fx_int[is.na(pint_fx_int$found),]$found <- FALSE
     pint_fx_int[is.na(pint_fx_int$lethal),]$lethal <- FALSE
+    pint_fx_int$equiv_tp <- get_equiv_tp(pint_fx_int, X, tp_hashes, 2)
   } else {
     pint_fx_int <- NA
   }
-  pint_smry <- rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .)
+  if (depth == 3) {
+    # three-way
+    bijk_ind <- data$bijk_ind
+    all_ijk <- as_array(torch_combinations(torch_tensor(1:p), 3))
+    all_ijk <- data.frame(gene_i = all_ijk[,1], gene_j = all_ijk[,2], gene_k = all_ijk[,3])
+    pint_fx_trip <- data.frame(gene_i = as.numeric(fit$triple$effects$i),
+                          gene_j = as.numeric(fit$triple$effects$j),
+                          gene_k = as.numeric(fit$triple$effects$k),
+                          strength = fit$triple$effects$strength)
+    hashes <- foreach(i=1:nrow(pint_fx_trip), .combine=rbind) %do% get_3way_hash(pint_fx_trip[i,]$gene_i, pint_fx_trip[i,]$gene_j, pint_fx_trip[i,]$gene_k, X)
+    pint_fx_trip$hash <- hashes
+    pint_fx_trip$equiv_tp <- pint_fx_trip$hash %in% tp_hashes
+    pint_fx_trip <- full_join(pint_fx_trip, all_ijk, by=c("gene_i", "gene_j", "gene_k")) |>
+      full_join(bijk_ind, by=c("gene_i", "gene_j", "gene_k")) |>
+      mutate(found = !is.na(strength), TP = !is.na(coef)) |>
+      mutate(lethal = (coef == lethal_coef), type="3way") |>
+      select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp)
+    pint_fx_trip[is.na(pint_fx_trip$equiv_tp),]$equiv_tp <- FALSE
+    pint_fx_main$gene_k <- NA
+    pint_fx_int$gene_k <- NA
+    pint_smry <- rbind(pint_fx_main, pint_fx_int, pint_fx_trip) %>% data.frame(id = 1:nrow(.), .)
+  } else {
+    pint_smry <- rbind(pint_fx_main, pint_fx_int) %>% data.frame(id = 1:nrow(.), .)
+  }
   return(pint_smry)
 }
 
+
 pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads))
-pint_smry <- get_pint_smry(fit)
+pint_smry <- get_pint_smry(fit, depth)
 
 ## Pint w/ hierarchy assumption
 pint_hierarchy_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, approximate_hierarchy = TRUE))
-pint_hierarchy_smry <- get_pint_smry(fit)
+pint_hierarchy_smry <- get_pint_smry(fit, depth)
 
 ## Pint w/ duplicate removal
 pint_dedup_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, check_duplicates = TRUE))
-pint_dedup_smry <- get_pint_smry(fit)
+pint_dedup_smry <- get_pint_smry(fit, depth)
 
 ## Pint w/ estimate unbiased
 pint_unbiased_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, estimate_unbiased = TRUE))
-pint_unbiased_smry <- get_pint_smry(fit$estimate_unbiased)
+pint_unbiased_smry <- get_pint_smry(fit$estimate_unbiased, depth)
+
+if (depth == 3) {
+  pint_pair_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = 2, num_threads = num_threads))
+  pint_pair_smry <- get_pint_smry(fit, 2)
+}
 
 
 ## glinternet ********************************************************************************************************
@@ -282,6 +382,7 @@ if (methods == "noglint") {
   glint_fx_main[is.na(glint_fx_main$TP),]$TP <- FALSE
   glint_fx_main[is.na(glint_fx_main$found),]$found <- FALSE
   glint_fx_main[is.na(glint_fx_main$lethal),]$lethal <- FALSE
+  glint_fx_main$equiv_tp <- get_equiv_tp(glint_fx_main, X, tp_hashes, 2)
 
   glint_fx_int <- data.frame(
     gene_i = cf$interactions$contcont[, 1], gene_j = cf$interactions$contcont[, 2],
@@ -305,6 +406,7 @@ if (methods == "noglint") {
   glint_fx_int[is.na(glint_fx_int$TP),]$TP <- FALSE
   glint_fx_int[is.na(glint_fx_int$found),]$found <- FALSE
   glint_fx_int[is.na(glint_fx_int$lethal),]$lethal <- FALSE
+  glint_fx_int$equiv_tp <- get_equiv_tp(glint_fx_int, X, tp_hashes, 2)
 
 
   #found_fx_main <- glint_fx_main |> filter(found==TRUE)
@@ -367,4 +469,7 @@ print(sprintf("Pint (unbiased) suggested %d in %.3fs, %d of which were correct",
 print(sprintf("Whinter suggested %d in %.3fs, %d of which were correct", nrow(whinter_smry |> filter(found == TRUE)), whinter_time[3], nrow(whinter_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
 if (methods != "noglint") {
   print(sprintf("glinternet suggested %d in %.3fs, %d of which were correct", nrow(glint_smry |> filter(found == TRUE)), glint_time[3], nrow(glint_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
+}
+if (depth == 3) {
+  print(sprintf("Pint (pairwise) suggested %d in %.3fs, %d of which were correct", nrow(pint_pair_smry |> filter(found == TRUE)), pint_pair_time[3], nrow(pint_pair_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
 }
