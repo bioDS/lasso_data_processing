@@ -31,6 +31,14 @@ run_sets_on_methods() {
 #set="simulated_small_data"
 
 # to reproduce current paper figures:
+## three-way comparison
+num_features=5000
+sets="3way"
+methods="all"
+depth="3"
+taskset_threads="0-95"
+use_cores="48"
+run_sets_on_methods
 
 depth=2
 num_features=1000
@@ -51,20 +59,11 @@ run_sets_on_methods
 ## new wide comparison
 num_features=5000
 sets="wide_only_10k"
-methods="noglint"
+methods="all"
 taskset_threads="0-95"
 use_cores="48"
 run_sets_on_methods
 
-# three-way comparison
-#num_features=5000
-#sets="3way"
-#methods="all"
-#depth="3"
-#
-#taskset_threads="0-95"
-#use_cores="1"
-#run_sets_on_methods
 
 # testing extra things
 # num_features=60
