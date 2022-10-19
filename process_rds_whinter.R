@@ -355,7 +355,7 @@ if (depth == 3) {
     mutate(lethal = (coef == lethal_coef), type="3way") |>
     mutate(equiv_tp = TP) |>
     select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp, coef)
-  pint_pair_smry$gene_k <- NA |> slect()
+  pint_pair_smry$gene_k <- NA
   pint_pair_smry <- pint_pair_smry[, -which(names(pint_pair_smry) == "id")]
   pint_pair_smry <- rbind(pint_pair_smry, pint_pair_fx_trip) %>% data.frame(id = 1:nrow(.), .)
 }
