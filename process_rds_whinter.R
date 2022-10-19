@@ -59,7 +59,6 @@ Y <- data$Y
 obs <- data$obs
 bi_ind <- data$bi_ind
 bij_ind <- data$bij_ind
-bijk_ind <- data$bijk_ind
 lethal_ind <- data$lethal_ind
 p <- ncol(X)
 
@@ -112,6 +111,29 @@ whinter_effects$gene_j <- whinter_effects$gene_j + 1
 
 
 print("checking accuracy of results")
+
+## fix order of 3way effects
+
+if (depth == 3) {
+  bijk_ind <- data$bijk_ind
+  swap_jk <- bijk_ind$gene_j > bijk_ind$gene_k
+  old_j <- bijk_ind[swap_jk, ]$gene_j
+  bijk_ind[swap_jk, ]$gene_j <- bijk_ind[swap_jk, ]$gene_k
+  bijk_ind[swap_jk, ]$gene_k <- old_j
+
+  swap_ij <- bijk_ind$gene_i > bijk_ind$gene_j
+  old_i <- bijk_ind[swap_ij, ]$gene_i
+  bijk_ind[swap_ij, ]$gene_i <- bijk_ind[swap_ij, ]$gene_j
+  bijk_ind[swap_ij, ]$gene_j <- old_i
+
+  swap_jk <- bijk_ind$gene_j > bijk_ind$gene_k
+  old_j <- bijk_ind[swap_jk, ]$gene_j
+  bijk_ind[swap_jk, ]$gene_j <- bijk_ind[swap_jk, ]$gene_k
+  bijk_ind[swap_jk, ]$gene_k <- old_j
+
+  all_ijk <- as_array(torch_combinations(torch_tensor(1:p), 3))
+  all_ijk <- data.frame(gene_i = all_ijk[,1], gene_j = all_ijk[,2], gene_k = all_ijk[,3])
+}
 
 ## handy functions
 
@@ -181,7 +203,7 @@ whinter_fx_main <- whinter_effects %>%
   mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
   full_join(all_i, by=c("gene_i", "gene_j")) %>%
   mutate(type = "main") %>%
-  select(gene_i, gene_j, type, lethal, found, TP, strength)
+  select(gene_i, gene_j, type, lethal, found, TP, strength, coef)
   whinter_fx_main[is.na(whinter_fx_main$strength),]$strength <- 0
   whinter_fx_main[is.na(whinter_fx_main$TP),]$TP <- FALSE
   whinter_fx_main[is.na(whinter_fx_main$found),]$found <- FALSE
@@ -202,7 +224,7 @@ if (nrow(whinter_fx_int) > 0) {
     mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
     full_join(all_ij, by=c("gene_i", "gene_j")) %>%
     mutate(type = "interaction") %>%
-    select(gene_i, gene_j, type, lethal, found, TP, strength)
+    select(gene_i, gene_j, type, lethal, found, TP, strength, coef)
   whinter_fx_int[is.na(whinter_fx_int$strength),]$strength <- 0
   whinter_fx_int[is.na(whinter_fx_int$TP),]$TP <- FALSE
   whinter_fx_int[is.na(whinter_fx_int$found),]$found <- FALSE
@@ -211,28 +233,22 @@ if (nrow(whinter_fx_int) > 0) {
 } else {
   whinter_fx_int <- NA
 }
-#found_fx_main <- whinter_fx_main |> filter(found==TRUE)
-#found_fx_int <- whinter_fx_int |> filter(found==TRUE)
-#Z <- cbind(X[, (found_fx_main)[["gene_i"]]])
-#if (nrow(found_fx_int) > 0) {
-#  for (i in 1:nrow(found_fx_int)) {
-#    Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
-#  }
-#}
-#Z <- as.matrix(Z)
-#colnames(Z) <- rownames(Z) <- NULL
-#Ynum <- as.numeric(Y)
-#ols_time <- system.time(fit_red <- lm(Ynum ~ Z))
 
-#pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
-#  filter(!is.na(coef)) %>%
-#  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
-#  tbl_df()
-#whinter_smry <- left_join(rbind(whinter_fx_main, whinter_fx_int) %>% data.frame(id = 1:nrow(.), .), pvals, by = "id") %>%
-#  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
-#  rename(coef.est = coef) #%>%
-  ## left_join(., obs, by = c("gene_i", "gene_j"))
-whinter_smry <- rbind(whinter_fx_main, whinter_fx_int) %>% data.frame(id = 1:nrow(.), .)
+if (depth == 3) {
+  # three-way
+  whinter_fx_trip <- data.frame(all_ijk) |>
+    mutate(strength = NA) |>
+    full_join(bijk_ind, by=c("gene_i", "gene_j", "gene_k")) |>
+    mutate(found = !is.na(strength), TP = !is.na(coef)) |>
+    mutate(lethal = (coef == lethal_coef), type="3way") |>
+    mutate(equiv_tp = TP) |>
+    select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp, coef)
+  whinter_fx_main$gene_k <- NA
+  whinter_fx_int$gene_k <- NA
+  whinter_smry <- rbind(whinter_fx_main, whinter_fx_int, whinter_fx_trip) %>% data.frame(id = 1:nrow(.), .)
+} else {
+  whinter_smry <- rbind(whinter_fx_main, whinter_fx_int) %>% data.frame(id = 1:nrow(.), .)
+}
 
 
 saveRDS(list(whinter_fx_int = whinter_fx_int, time = time, smry = whinter_smry), "whinter_fx_int.rds")
@@ -250,7 +266,7 @@ get_pint_smry <- function(fit, depth) {
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
-    select(gene_i, gene_j, TP, found, lethal, strength) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength, coef) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
     full_join(all_i, by=c("gene_i", "gene_j")) %>%
@@ -276,7 +292,7 @@ get_pint_smry <- function(fit, depth) {
       mutate(lethal = (coef == lethal_coef)) %>%
       arrange(desc(TP)) %>%
       arrange(desc(lethal)) %>%
-      select(gene_i, gene_j, TP, found, lethal, strength) %>%
+      select(gene_i, gene_j, TP, found, lethal, strength, coef) %>%
       distinct(gene_i, gene_j, .keep_all = TRUE) %>%
       full_join(all_ij, by=c("gene_i", "gene_j")) %>%
       mutate(type = "interaction") %>%
@@ -291,9 +307,6 @@ get_pint_smry <- function(fit, depth) {
   }
   if (depth == 3) {
     # three-way
-    bijk_ind <- data$bijk_ind
-    all_ijk <- as_array(torch_combinations(torch_tensor(1:p), 3))
-    all_ijk <- data.frame(gene_i = all_ijk[,1], gene_j = all_ijk[,2], gene_k = all_ijk[,3])
     pint_fx_trip <- data.frame(gene_i = as.numeric(fit$triple$effects$i),
                           gene_j = as.numeric(fit$triple$effects$j),
                           gene_k = as.numeric(fit$triple$effects$k),
@@ -305,7 +318,7 @@ get_pint_smry <- function(fit, depth) {
       full_join(bijk_ind, by=c("gene_i", "gene_j", "gene_k")) |>
       mutate(found = !is.na(strength), TP = !is.na(coef)) |>
       mutate(lethal = (coef == lethal_coef), type="3way") |>
-      select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp)
+      select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp, coef)
     pint_fx_trip[is.na(pint_fx_trip$equiv_tp),]$equiv_tp <- FALSE
     pint_fx_main$gene_k <- NA
     pint_fx_int$gene_k <- NA
@@ -335,6 +348,16 @@ pint_unbiased_smry <- get_pint_smry(fit$estimate_unbiased, depth)
 if (depth == 3) {
   pint_pair_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = 2, num_threads = num_threads))
   pint_pair_smry <- get_pint_smry(fit, 2)
+  pint_pair_fx_trip <- data.frame(all_ijk) |>
+    mutate(strength = NA) |>
+    full_join(bijk_ind, by=c("gene_i", "gene_j", "gene_k")) |>
+    mutate(found = !is.na(strength), TP = !is.na(coef)) |>
+    mutate(lethal = (coef == lethal_coef), type="3way") |>
+    mutate(equiv_tp = TP) |>
+    select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp, coef)
+  pint_pair_smry$gene_k <- NA |> slect()
+  pint_pair_smry <- pint_pair_smry[, -which(names(pint_pair_smry) == "id")]
+  pint_pair_smry <- rbind(pint_pair_smry, pint_pair_fx_trip) %>% data.frame(id = 1:nrow(.), .)
 }
 
 
@@ -372,7 +395,7 @@ if (methods == "noglint") {
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = gene_i %in% lethal_ind[["gene_i"]]) %>%
-    select(gene_i, gene_j, TP, found, lethal, strength) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength, coef) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
     full_join(all_i, by=c("gene_i", "gene_j")) %>%
@@ -396,7 +419,7 @@ if (methods == "noglint") {
     mutate(TP = !is.na(coef)) %>%
     mutate(found = !is.na(strength)) %>%
     mutate(lethal = (coef == lethal_coef)) %>%
-    select(gene_i, gene_j, TP, found, lethal, strength) %>%
+    select(gene_i, gene_j, TP, found, lethal, strength, coef) %>%
     arrange(desc(TP)) %>%
     arrange(desc(lethal)) %>%
     full_join(all_ij, by=c("gene_i", "gene_j")) %>%
@@ -408,30 +431,21 @@ if (methods == "noglint") {
   glint_fx_int[is.na(glint_fx_int$lethal),]$lethal <- FALSE
   glint_fx_int$equiv_tp <- get_equiv_tp(glint_fx_int, X, tp_hashes, 2)
 
-
-  #found_fx_main <- glint_fx_main |> filter(found==TRUE)
-  #found_fx_int <- glint_fx_int |> filter(found==TRUE)
-  ### Statistical test if b_i and b_ij are sig. > 0
-  #Z <- cbind(X[, found_fx_main[["gene_i"]]])
-  #for (i in 1:nrow(found_fx_int)) {
-  #  Z <- cbind(Z, X[, found_fx_int[i, ][["gene_i"]], drop = FALSE] * X[, found_fx_int[i, ][["gene_j"]], drop = FALSE])
-  #}
-  #Z <- as.matrix(Z)
-  #colnames(Z) <- rownames(Z) <- NULL
-  #Ynum <- as.numeric(Y)
-  #fit_red <- lm(Ynum ~ Z)
-
-
-  #glint_pvals <- data.frame(id = 1:ncol(Z), coef = coef(fit_red)[-1]) %>%
-  #  filter(!is.na(coef)) %>%
-  #  data.frame(., pval = summary(fit_red)$coef[-1, 4]) %>%
-  #  tbl_df()
-
-  #glint_smry <- left_join(rbind(glint_fx_main, glint_fx_int) %>% data.frame(id = 1:nrow(.), .), glint_pvals, by = "id") %>%
-  #  mutate(pval = ifelse(is.na(pval), 1, pval)) %>%
-  #  rename(coef.est = coef) #%>%
-  #  ## left_join(., obs, by = c("gene_i", "gene_j"))
-  glint_smry <- rbind(glint_fx_main, glint_fx_int) %>% data.frame(id = 1:nrow(.), .)
+  if (depth == 3) {
+    # three-way
+    glint_fx_trip <- data.frame(all_ijk) |>
+      mutate(strength = NA) |>
+      full_join(bijk_ind, by=c("gene_i", "gene_j", "gene_k")) |>
+      mutate(found = !is.na(strength), TP = !is.na(coef)) |>
+      mutate(lethal = (coef == lethal_coef), type="3way") |>
+      mutate(equiv_tp = TP) |>
+      select(gene_i, gene_j, gene_k, TP, found, lethal, strength, type, equiv_tp, coef)
+    glint_fx_main$gene_k <- NA
+    glint_fx_int$gene_k <- NA
+    glint_smry <- rbind(glint_fx_main, glint_fx_int, glint_fx_trip) %>% data.frame(id = 1:nrow(.), .)
+  } else {
+    glint_smry <- rbind(glint_fx_main, glint_fx_int) %>% data.frame(id = 1:nrow(.), .)
+  }
 }
 
 
@@ -441,6 +455,9 @@ if (methods == "noglint") {
 #whinter_fx_int %>% data.frame()
 #print("pint")
 #pint_fx_int %>% data.frame()
+if (depth != 3) {
+  pint_pair_smry = NA
+}
 
 saveRDS(list(
   whinter_time = whinter_time,
@@ -453,6 +470,7 @@ saveRDS(list(
   pint_hierarchy_smry = pint_hierarchy_smry,
   pint_dedup_smry = pint_dedup_smry,
   pint_unbiased_smry = pint_unbiased_smry,
+  pint_pair_smry = pint_pair_smry,
   glint_time = glint_time,
   glint_smry = glint_smry,
   bij = bij_ind,
