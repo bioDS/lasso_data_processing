@@ -1,0 +1,7 @@
+# processing/plot output
+*.csv
+*.pdf
+*.rds
+*.tsv
+log.txt
+*.out
