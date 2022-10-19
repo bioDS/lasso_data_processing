@@ -86,18 +86,25 @@ if (!file.exists("converted.tsv")) {
   system(sprintf("%s %s %s converted.tsv", convert_format, x_filename, y_filename))
 }
 
-print("running whinter")
-command <- sprintf("%s -pathResults ./results/ -useBias 0 -lambdaMinRatio 0.01 -nlambda %d -eps 0.01 -maxSelectedFeatures %d converted.tsv", whinter_bin, max_lambdas, num_features)
-cat(getwd(), ":", command, "\n")
-
-if (!dir.exists("results")) {
-  dir.create("results")
-}
-whinter_time <- system.time(
-  system(command)
-)
-
 model <- list.files("results", pattern = "*model.csv")
+if (length(model) < 1 || !file.exists(whinter_time.csv)) {
+
+  print("running whinter")
+  command <- sprintf("%s -pathResults ./results/ -useBias 0 -lambdaMinRatio 0.01 -nlambda %d -eps 0.01 -maxSelectedFeatures %d converted.tsv", whinter_bin, max_lambdas, num_features)
+  cat(getwd(), ":", command, "\n")
+
+  if (!dir.exists("results")) {
+    dir.create("results")
+  }
+  whinter_time <- system.time(
+    system(command)
+  )
+  write.csv(data.frame(whinter_time[3]), "whinter_time.csv")
+
+  model <- list.files("results", pattern = "*model.csv")
+} else {
+  whinter_time <- read.csv("whinter_time.csv", row.names=1)
+}
 
 print(sprintf("reading from output file %s\n", model))
 output <- read.delim(paste("results", model, sep = "/"), sep = ",")
@@ -114,6 +121,9 @@ print("checking accuracy of results")
 
 ## fix order of 3way effects
 
+all_i <- data.frame(gene_i = 1:p) |> mutate(gene_j = NA)
+all_ij <- as_array(torch_combinations(torch_tensor(1:p), 2))
+all_ij <- data.frame(gene_i = all_ij[,1], gene_j = all_ij[,2])
 if (depth == 3) {
   bijk_ind <- data$bijk_ind
   swap_jk <- bijk_ind$gene_j > bijk_ind$gene_k
@@ -191,7 +201,6 @@ get_equiv_tp <- function(fx_set, X, tp_hashes, depth) {
 ## WHInter ********************************************************************************************************
 
 
-all_i <- data.frame(gene_i = 1:p) |> mutate(gene_j = NA)
 
 whinter_fx_main <- whinter_effects %>%
   filter(gene_i == gene_j) %>%
@@ -215,8 +224,6 @@ whinter_fx_int  <- whinter_effects %>%
   filter(gene_i != gene_j)
 
 if (nrow(whinter_fx_int) > 0) {
-  all_ij <- as_array(torch_combinations(torch_tensor(1:p), 2))
-  all_ij <- data.frame(gene_i = all_ij[,1], gene_j = all_ij[,2])
   whinter_fx_int <- whinter_fx_int %>% mutate(found = TRUE) %>%
     full_join(bij_ind, by = c("gene_i","gene_j")) %>%
     mutate(TP = !is.na(coef)) %>%
@@ -251,7 +258,7 @@ if (depth == 3) {
 }
 
 
-saveRDS(list(whinter_fx_int = whinter_fx_int, time = time, smry = whinter_smry), "whinter_fx_int.rds")
+#saveRDS(list(whinter_fx_int = whinter_fx_int, time = time, smry = whinter_smry), "whinter_fx_int.rds")
 
 print("running Pint for comparison")
 
@@ -329,24 +336,52 @@ get_pint_smry <- function(fit, depth) {
   return(pint_smry)
 }
 
+load_or_run_pint <- function(max_nz_beta, max_lambdas, depth, num_threads, approximate_hierarchy=FALSE, check_duplicates=FALSE, estimate_unbiased=FALSE) {
+  results_filename_base <- sprintf("pint_%s_%s_%s_%s_%s_%s_%s", num_features, max_lambdas, depth, num_threads, approximate_hierarchy, check_duplicates, estimate_unbiased)
+  pint_filename  <- sprintf("%s-pint_fit.rds", results_filename_base)
+  pint_time_file <- sprintf("%s-time.csv"    , results_filename_base)
+  if (!file.exists(pint_filename) || !file.exists(pint_time_file)) {
+    pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth,
+          num_threads = num_threads, approximate_hierarchy = approximate_hierarchy, check_duplicates = check_duplicates,
+          estimate_unbiased = estimate_unbiased))
+    pint_time <- data.frame(pint_time[3])
+    write.csv(pint_time, pint_time_file)
+    saveRDS(fit, pint_filename)
+  } else {
+    fit <- readRDS(pint_filename)
+    pint_time <- read.csv(pint_time_file, row.names=1)
+  }
+  return(list(pint_time, fit))
+}
 
-pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads))
+ret <- load_or_run_pint(max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads)
+pint_time <- ret[[1]]
+fit <- ret[[2]]
+#pint_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads))
 pint_smry <- get_pint_smry(fit, depth)
 
 ## Pint w/ hierarchy assumption
-pint_hierarchy_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, approximate_hierarchy = TRUE))
+ret <- load_or_run_pint(max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, approximate_hierarchy = TRUE)
+pint_hierarchy_time <- ret[[1]]
+fit <- ret[[2]]
 pint_hierarchy_smry <- get_pint_smry(fit, depth)
 
 ## Pint w/ duplicate removal
-pint_dedup_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, check_duplicates = TRUE))
+ret <- load_or_run_pint(max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, check_duplicates = TRUE)
+pint_dedup_time <- ret[[1]]
+fit <- ret[[2]]
 pint_dedup_smry <- get_pint_smry(fit, depth)
 
 ## Pint w/ estimate unbiased
-pint_unbiased_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, estimate_unbiased = TRUE))
+ret <- load_or_run_pint(max_nz_beta = num_features, max_lambdas = max_lambdas, depth = depth, num_threads = num_threads, estimate_unbiased = TRUE)
+pint_unbiased_time <- ret[[1]]
+fit <- ret[[2]]
 pint_unbiased_smry <- get_pint_smry(fit$estimate_unbiased, depth)
 
 if (depth == 3) {
-  pint_pair_time <- system.time(fit <- interaction_lasso(X, Y, max_nz_beta = num_features, max_lambdas = max_lambdas, depth = 2, num_threads = num_threads))
+  ret <- load_or_run_pint(max_nz_beta = num_features, max_lambdas = max_lambdas, depth = 2, num_threads = num_threads)
+  pint_pair_time <- ret[[1]]
+  fit <- ret[[2]]
   pint_pair_smry <- get_pint_smry(fit, 2)
   pint_pair_fx_trip <- data.frame(all_ijk) |>
     mutate(strength = NA) |>
@@ -372,15 +407,22 @@ if (methods == "noglint") {
 } else {
   print("glinternet for comparison")
 
-  glint_time <- system.time(fit <- glinternet(
-    X = X %>% as.matrix(),
-    Y = Y %>% as.numeric(),
-    numLevels = rep(1, p),
-    family = "gaussian",
-    numToFind = num_features,
-    nLambda = max_lambdas, numCores = num_threads, lambdaMinRatio = lambda_min_ratio, verbose = TRUE
-  ))
-
+  if (!file.exists("glint_time.csv") || !file.exists("glint_fit.rds")) {
+    glint_time <- system.time(fit <- glinternet(
+      X = X %>% as.matrix(),
+      Y = Y %>% as.numeric(),
+      numLevels = rep(1, p),
+      family = "gaussian",
+      numToFind = num_features,
+      nLambda = max_lambdas, numCores = num_threads, lambdaMinRatio = lambda_min_ratio, verbose = TRUE
+    ))
+    saveRDS(fit, "glint_fit.rds")
+    glint_time <- data.frame(glint_time[3])
+    write.csv(glint_time, "glint_time.csv")
+  } else {
+    fit <- readRDS("glint_fit.rds")
+    glint_time <- read.csv("glint_time.csv", row.names=1)
+  }
   cf <- coef(fit, lambdaType = "lambdaHat") # lambdaIndex = 50)#
   cf <- cf[[length(cf)]]
 
@@ -480,14 +522,16 @@ saveRDS(list(
 print("summarising")
 
 print(sprintf("there were %d true interactions\n", nrow(bij_ind)))
-print(sprintf("Pint suggested %d in %.3fs, %d of which were correct", nrow(pint_smry |> filter(found == TRUE)), pint_time[3], nrow(pint_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
-print(sprintf("Pint (hierarchy) suggested %d in %.3fs, %d of which were correct", nrow(pint_hierarchy_smry |> filter(found == TRUE)), pint_hierarchy_time[3], nrow(pint_hierarchy_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
-print(sprintf("Pint (dedup) suggested %d in %.3fs, %d of which were correct", nrow(pint_dedup_smry |> filter(found == TRUE)), pint_dedup_time[3], nrow(pint_dedup_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
-print(sprintf("Pint (unbiased) suggested %d in %.3fs, %d of which were correct", nrow(pint_unbiased_smry |> filter(found == TRUE)), pint_unbiased_time[3], nrow(pint_unbiased_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
-print(sprintf("Whinter suggested %d in %.3fs, %d of which were correct", nrow(whinter_smry |> filter(found == TRUE)), whinter_time[3], nrow(whinter_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
+print(sprintf("Pint suggested %d in %.3fs, %d of which were correct", nrow(pint_smry |> filter(found == TRUE)), pint_time, nrow(pint_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Pint (hierarchy) suggested %d in %.3fs, %d of which were correct", nrow(pint_hierarchy_smry |> filter(found == TRUE)), pint_hierarchy_time, nrow(pint_hierarchy_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Pint (dedup) suggested %d in %.3fs, %d of which were correct", nrow(pint_dedup_smry |> filter(found == TRUE)), pint_dedup_time, nrow(pint_dedup_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Pint (unbiased) suggested %d in %.3fs, %d of which were correct", nrow(pint_unbiased_smry |> filter(found == TRUE)), pint_unbiased_time, nrow(pint_unbiased_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+print(sprintf("Whinter suggested %d in %.3fs, %d of which were correct", nrow(whinter_smry |> filter(found == TRUE)), whinter_time, nrow(whinter_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
 if (methods != "noglint") {
-  print(sprintf("glinternet suggested %d in %.3fs, %d of which were correct", nrow(glint_smry |> filter(found == TRUE)), glint_time[3], nrow(glint_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
+  print(sprintf("glinternet suggested %d in %.3fs, %d of which were correct", nrow(glint_smry |> filter(found == TRUE)), glint_time, nrow(glint_smry  |> filter(found == TRUE) %>% filter(TP == TRUE))))
 }
 if (depth == 3) {
-  print(sprintf("Pint (pairwise) suggested %d in %.3fs, %d of which were correct", nrow(pint_pair_smry |> filter(found == TRUE)), pint_pair_time[3], nrow(pint_pair_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
+  print(sprintf("Pint (pairwise) suggested %d in %.3fs, %d of which were correct", nrow(pint_pair_smry |> filter(found == TRUE)), pint_pair_time, nrow(pint_pair_smry %>% filter(TP == TRUE) |> filter(found == TRUE))))
 }
+
+
