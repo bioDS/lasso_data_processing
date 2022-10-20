@@ -11,7 +11,7 @@ source("summary_functions.R")
 
 registerDoMC(cores = detectCores())
 
-bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k", "3way")
+bench_sets <- c("simulated_small_data_sample", "3way", "8k_only", "wide_only_10k")
 # bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k")
 # bench_sets <- c("wide_only_10k")
 #bench_sets <- c("3way")
@@ -309,6 +309,12 @@ plot_pint_equiv_vs_tp <- function(pint, include_FN, output_filename) {
     ggsave(roc_plot, file = output_filename, width = 7, height = 5)
 }
 
+fix_na_strengths <- function(smry) {
+    if (sum(is.na(smry$strength)) > 0) {
+        smry[is.na(smry$strength), ]$strength <- 0
+    }
+}
+
 # all_sets_pint_summaries <- c()
 # all_sets_pint_hierarchy_summaries <- c()
 # all_sets_pint_dedup_summaries <- c()
@@ -325,7 +331,7 @@ for (bench_set in bench_sets) {
         all_pint_pair_smrys <- NA
     }
 
-    dir <- paste("whinter_pint_comparison", bench_set, sep = "/")
+    dir <- paste("whinter_pint_comparison.safe", bench_set, sep = "/")
 
     rds_files <- list.files(dir, pattern = "all.rds", recursive = TRUE, full.names = TRUE)
 
@@ -365,12 +371,12 @@ for (bench_set in bench_sets) {
     } else {
         all_glint_smrys <- NA
     }
-    all_pint_smrys[is.na(all_pint_smrys$strength),]$strength <- 0
-    all_pint_dedup_smrys[is.na(all_pint_dedup_smrys$strength),]$strength <- 0
-    all_pint_hierarchy_smrys[is.na(all_pint_hierarchy_smrys$strength),]$strength <- 0
-    all_pint_unbiased_smrys[is.na(all_pint_unbiased_smrys$strength),]$strength <- 0
-    all_whinter_smrys[is.na(all_whinter_smrys$strength),]$strength <- 0
-    all_glint_smrys[is.na(all_glint_smrys$strength),]$strength <- 0
+    fix_na_strengths(all_pint_smrys)
+    fix_na_strengths(all_pint_dedup_smrys)
+    fix_na_strengths(all_pint_hierarchy_smrys)
+    fix_na_strengths(all_pint_unbiased_smrys)
+    fix_na_strengths(all_whinter_smrys)
+    fix_na_strengths(all_glint_smrys)
 
     # all_sets_pint_summaries <- rbind(all_sets_pint_summaries, all_pint_smrys)
     # gc()
@@ -506,19 +512,21 @@ for (bench_set in bench_sets) {
         use_equiv_tp = TRUE
     )
     # threeway
-    plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
-        sprintf("plots/rocs/3way_comparison_roc_%s.pdf", bench_set),
-        use_equiv_tp = FALSE
-    )
-    plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
-        sprintf("plots/rocs/3way_comparison_roc_equiv_%s.pdf", bench_set),
-        use_equiv_tp = TRUE
-    )
-    plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, FALSE,
-        sprintf("plots/rocs/3way_comparison_roc_equiv_%s_FoundOnly.pdf", bench_set),
-        use_equiv_tp = TRUE
-    )
-    plot_pint_equiv_vs_tp(all_pint_smrys, FALSE, sprintf("plots/rocs/3way_comparison_roc_equiv_vs_tp_%s_FoundOnly.pdf", bench_set))
+    if (bench_set == "3way") {
+        plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
+            sprintf("plots/rocs/3way_comparison_roc_%s.pdf", bench_set),
+            use_equiv_tp = FALSE
+        )
+        plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
+            sprintf("plots/rocs/3way_comparison_roc_equiv_%s.pdf", bench_set),
+            use_equiv_tp = TRUE
+        )
+        plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, FALSE,
+            sprintf("plots/rocs/3way_comparison_roc_equiv_%s_FoundOnly.pdf", bench_set),
+            use_equiv_tp = TRUE
+        )
+        plot_pint_equiv_vs_tp(all_pint_smrys, FALSE, sprintf("plots/rocs/3way_comparison_roc_equiv_vs_tp_%s_FoundOnly.pdf", bench_set))
+    }
 
     # set times
     if (use_glint) {
@@ -532,7 +540,7 @@ for (bench_set in bench_sets) {
         scale_y_continuous(trans = "log2") +
         ylab("Time (s)") +
         expand_limits(y = 0)
-    ggsave(time_plot, file = sprintf("plots/bench_times_%s.pdf", bench_set), width = 4, height = 4)
+    ggsave(time_plot, file = sprintf("plots/bench_times_%s.pdf", bench_set), width = 3, height = 3)
 }
 
 # use_glint=TRUE
