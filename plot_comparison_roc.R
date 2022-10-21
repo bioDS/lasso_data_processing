@@ -6,15 +6,24 @@ library(foreach)
 library(doMC)
 library(ggplot2)
 library(reshape2)
+library(future)
 
 source("summary_functions.R")
 
-registerDoMC(cores = detectCores())
+registerDoMC(cores = 8)
 
 bench_sets <- c("simulated_small_data_sample", "3way", "8k_only", "wide_only_10k")
 # bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k")
 # bench_sets <- c("wide_only_10k")
 #bench_sets <- c("3way")
+
+options(future.globals.maxSize = 4 * 1024^3)
+get_roc_set_future <- function(response, predict) {
+    f <- future({
+        roc(response = response, predict = predict)
+    }) %plan% multicore
+    return(f)
+}
 
 plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
                       all_pint_unbiased_smrys, all_glint_smrys, all_whinter_smrys,
@@ -53,49 +62,50 @@ plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_s
     }
 
     if (use_equiv_tp) {
-        pint_roc <- roc(response = pint$equiv_tp & pint$TP, predict = abs(pint$strength))
+        pint_roc_future <- get_roc_set_future(response = pint$equiv_tp & pint$TP, predict = abs(pint$strength))
         gc()
-        pint_hierarchy_roc <- roc(response = pint_hierarchy$equiv_tp & pint_hierarchy$TP, predict = abs(pint_hierarchy$strength))
+        pint_hierarchy_roc_future <- get_roc_set_future(response = pint_hierarchy$equiv_tp & pint_hierarchy$TP, predict = abs(pint_hierarchy$strength))
         gc()
-        pint_dedup_roc <- roc(response = pint_dedup$equiv_tp & pint_dedup$TP, predict = abs(pint_dedup$strength))
-        gc()
-        pint_unbiased_roc <- roc(response = pint_unbiased$equiv_tp & pint_unbiased$TP, predict = abs(pint_unbiased$strength))
-        gc()
-        whinter_roc <- roc(response = whinter$equiv_tp & whinter$TP, predict = abs(whinter$strength))
+        #pint_dedup_roc_future <- get_roc_set_future(response = pint_dedup$equiv_tp & pint_dedup$TP, predict = abs(pint_dedup$strength))
+        #gc()
+        #pint_unbiased_roc_future <- get_roc_set_future(response = pint_unbiased$equiv_tp & pint_unbiased$TP, predict = abs(pint_unbiased$strength))
+        #gc()
+        whinter_roc_future <- get_roc_set_future(response = whinter$equiv_tp & whinter$TP, predict = abs(whinter$strength))
         if (use_glint) {
-            glint_roc <- roc(response = glint$equiv_tp & glint$TP, predict = abs(glint$strength))
+            glint_roc_future <- get_roc_set_future(response = glint$equiv_tp & glint$TP, predict = abs(glint$strength))
         }
     } else {
-        pint_roc <- roc(response = pint$TP, predict = abs(pint$strength))
+        #pint_roc <- roc(response = pint$TP, predict = abs(pint$strength))
+        pint_roc_future <- get_roc_set_future(response = pint$TP, predict = abs(pint$strength))
         gc()
-        pint_hierarchy_roc <- roc(response = pint_hierarchy$TP, predict = abs(pint_hierarchy$strength))
+        pint_hierarchy_roc_future <- get_roc_set_future(response = pint_hierarchy$TP, predict = abs(pint_hierarchy$strength))
         gc()
-        pint_dedup_roc <- roc(response = pint_dedup$TP, predict = abs(pint_dedup$strength))
-        gc()
-        pint_unbiased_roc <- roc(response = pint_unbiased$TP, predict = abs(pint_unbiased$strength))
-        gc()
-        whinter_roc <- roc(response = whinter$TP, predict = abs(whinter$strength))
+        #pint_dedup_roc <- roc(response = pint_dedup$TP, predict = abs(pint_dedup$strength))
+        #gc()
+        #pint_unbiased_roc <- roc(response = pint_unbiased$TP, predict = abs(pint_unbiased$strength))
+        #gc()
+        whinter_roc_future <- get_roc_set_future(response = whinter$TP, predict = abs(whinter$strength))
         if (use_glint) {
-            glint_roc <- roc(response = glint$TP, predict = abs(glint$strength))
+            glint_roc_future <- get_roc_set_future(response = glint$TP, predict = abs(glint$strength))
         }
     }
     gc()
 
     if (use_glint) {
         roc_list <- list(
-            Pint = pint_roc,
-            "Pint hierarchy" = pint_hierarchy_roc,
-            # Pint_Dedup = pint_dedup_roc,
-            # Pint_Unbiased = pint_unbiased_roc,
-            Whinter = whinter_roc,
-            Glinternet = glint_roc
+            Pint = value(pint_roc_future),
+            "Pint hierarchy" = value(pint_hierarchy_roc_future),
+            # Pint_Dedup = value(pint_dedup_roc_future),
+            # Pint_Unbiased = value(pint_unbiased_roc_future),
+            Whinter = value(whinter_roc_future),
+            Glinternet = value(glint_roc_future)
         )
-        glint_annotation <- sprintf("Glinternet auc: %.2f", round(glint_roc$auc, digits = 2))
+        glint_annotation <- sprintf("Glinternet auc: %.2f", round(value(glint_roc_future)$auc, digits = 2))
     } else {
         roc_list <- list(
-            Pint = pint_roc,
-            "Pint hierarchy" = pint_hierarchy_roc,
-            Whinter = whinter_roc
+            Pint = value(pint_roc_future),
+            "Pint hierarchy" = value(pint_hierarchy_roc_future),
+            Whinter = value(whinter_roc_future)
         )
         glint_annotation <- ""
     }
@@ -103,11 +113,11 @@ plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_s
         ggroc(roc_list) +
         theme_bw() +
         geom_segment(x = -1, y = 0, xend = 0, yend = 1, color = "#4c72b0") +
-        annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint auc: %.2f", round(pint_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint hierarchy auc: %.2f", round(pint_hierarchy_roc$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint auc: %.2f", round(value(pint_roc_future)$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint hierarchy auc: %.2f", round(value(pint_hierarchy_roc_future)$auc, digits = 2))) +
         ## annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint_Dedup auc: %.2f", round(pint_dedup_roc$auc, digits = 2))) +
         ## annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.2, label = sprintf("Whinter auc: %.2f", round(whinter_roc$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.2, label = sprintf("Whinter auc: %.2f", round(value(whinter_roc_future)$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.1, label = glint_annotation)
     ggsave(roc_plot, file = output_filename, width = 7, height = 5)
 }
@@ -196,52 +206,52 @@ plot_rocs_anyfound <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pin
         }
     }
 
-    pint_roc <- roc(response = pint_anyfound$TP, predict = abs(pint_anyfound$strength))
+    pint_roc_future <- get_roc_set_future(response = pint_anyfound$TP, predict = abs(pint_anyfound$strength))
     gc()
-    pint_hierarchy_roc <- roc(response = pint_hierarchy_anyfound$TP, predict = abs(pint_hierarchy_anyfound$strength))
+    pint_hierarchy_roc_future <- get_roc_set_future(response = pint_hierarchy_anyfound$TP, predict = abs(pint_hierarchy_anyfound$strength))
     gc()
-    # pint_dedup_roc <- roc(response = pint_dedup_anyfound$TP, predict = abs(pint_dedup_anyfound$strength))
+    # pint_dedup_roc_future <- get_roc_set_future(response = pint_dedup_anyfound$TP, predict = abs(pint_dedup_anyfound$strength))
     gc()
-    whinter_roc <- roc(response = whinter_anyfound$TP, predict = abs(whinter_anyfound$strength))
+    whinter_roc_future <- get_roc_set_future(response = whinter_anyfound$TP, predict = abs(whinter_anyfound$strength))
     if (use_glint) {
-        glint_roc <- roc(response = glint_anyfound$TP, predict = abs(glint_anyfound$strength))
+        glint_roc_future <- get_roc_set_future(response = glint_anyfound$TP, predict = abs(glint_anyfound$strength))
     }
     if (use_pint_pair) {
-        pint_pair_roc <- roc(response = pint_pair_anyfound$TP, predict = abs(pint_pair_anyfound$strength))
+        pint_pair_roc_future <- get_roc_set_future(response = pint_pair_anyfound$TP, predict = abs(pint_pair_anyfound$strength))
     }
     gc()
 
     roc_list <- list(
-        Pint = pint_roc,
-        # "Pint deduplicated" = pint_dedup_roc,
-        "Pint hierarchy" = pint_hierarchy_roc,
-        Whinter = whinter_roc
+        Pint = value(pint_roc_future),
+        # "Pint deduplicated" = value(pint_dedup_roc_future),
+        "Pint hierarchy" = value(pint_hierarchy_roc_future),
+        Whinter = value(whinter_roc_future)
     )
     glint_annotation <- ""
     pint_pair_annotation <- ""
     if (use_glint) {
         roc_list <- append(
             roc_list,
-            list(Glinternet = glint_roc)
+            list(Glinternet = value(glint_roc_future))
         )
-        glint_annotation <- sprintf("Glinternet auc: %.2f", round(glint_roc$auc, digits = 2))
+        glint_annotation <- sprintf("Glinternet auc: %.2f", round(value(glint_roc_future)$auc, digits = 2))
     }
     if (use_pint_pair) {
         roc_list <- append(
             roc_list,
-            list("Pint (pairwise only)" = pint_pair_roc)
+            list("Pint (pairwise only)" = value(pint_pair_roc_future))
         )
-        pint_pair_annotation <- sprintf("Pint (pairwise) auc: %.2f", round(pint_pair_roc$auc, digits = 2))
+        pint_pair_annotation <- sprintf("Pint (pairwise) auc: %.2f", round(value(pint_pair_roc_future)$auc, digits = 2))
     }
     roc_plot <-
         ggroc(roc_list) +
         theme_bw() +
         geom_segment(x = -1, y = 0, xend = 0, yend = 1, color = "#4c72b0") +
-        annotate("text", x = 0.2, y = 0.5, label = sprintf("Pint auc: %.2f", round(pint_roc$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.5, label = sprintf("Pint auc: %.2f", round(value(pint_roc_future)$auc, digits = 2))) +
         # annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint (dedup) auc: %.2f", round(pint_dedup_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint hierarchy auc: %.2f", round(pint_hierarchy_roc$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint hierarchy auc: %.2f", round(value(pint_hierarchy_roc_future)$auc, digits = 2))) +
         ## annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
-        annotate("text", x = 0.2, y = 0.3, label = sprintf("Whinter auc: %.2f", round(whinter_roc$auc, digits = 2))) +
+        annotate("text", x = 0.2, y = 0.3, label = sprintf("Whinter auc: %.2f", round(value(whinter_roc_future)$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.2, label = glint_annotation) +
         annotate("text", x = 0.2, y = 0.1, label = pint_pair_annotation)
     ggsave(roc_plot, file = output_filename, width = 7, height = 5)
@@ -313,15 +323,9 @@ fix_na_strengths <- function(smry) {
     if (sum(is.na(smry$strength)) > 0) {
         smry[is.na(smry$strength), ]$strength <- 0
     }
+    return(smry)
 }
 
-# all_sets_pint_summaries <- c()
-# all_sets_pint_hierarchy_summaries <- c()
-# all_sets_pint_dedup_summaries <- c()
-# all_sets_pint_unbiased_summaries <- c()
-# all_sets_whinter_summaries <- c()
-# all_sets_glint_summaries <- c()
-# all_sets_times <- c()
 for (bench_set in bench_sets) {
     use_glint <- TRUE
     if (bench_set == "3way") {
@@ -336,57 +340,64 @@ for (bench_set in bench_sets) {
     rds_files <- list.files(dir, pattern = "all.rds", recursive = TRUE, full.names = TRUE)
 
     output <- c()
-    for (file in rds_files) {
+    output <- foreach(file = rds_files, .combine=cbind) %dopar% {
         print(sprintf("reading file %s", file))
-        output <- cbind(output, readRDS(file))
+        new_out <- readRDS(file)
         print("done")
+        return(new_out)
     }
-
     output <- data.frame(output)
 
+    use_values <- c("gene_i", "gene_j", "TP", "strength", "found", "type")
     all_pint_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_smry
+        set$pint_smry |> select(all_of(use_values))
     }
     all_pint_hierarchy_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_hierarchy_smry
+        set$pint_hierarchy_smry |> select(all_of(use_values))
     }
     all_pint_dedup_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_dedup_smry
+        set$pint_dedup_smry |> select(all_of(use_values))
     }
     all_pint_unbiased_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_unbiased_smry
+        set$pint_unbiased_smry |> select(all_of(use_values))
     }
     if (use_pint_pair) {
         all_pint_pair_smrys <- foreach(set = output, .combine = rbind) %do% {
-            set$pint_pair_smry
+            set$pint_pair_smry |> select(all_of(use_values))
         }
     }
     all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$whinter_smry
+        set$whinter_smry |> select(all_of(use_values))
     }
     if (use_glint) {
         all_glint_smrys <- foreach(set = output, .combine = rbind) %do% {
-            set$glint_smry
+            set$glint_smry |> select(all_of(use_values))
         }
     } else {
         all_glint_smrys <- NA
     }
-    fix_na_strengths(all_pint_smrys)
-    fix_na_strengths(all_pint_dedup_smrys)
-    fix_na_strengths(all_pint_hierarchy_smrys)
-    fix_na_strengths(all_pint_unbiased_smrys)
-    fix_na_strengths(all_whinter_smrys)
-    fix_na_strengths(all_glint_smrys)
-
-    # all_sets_pint_summaries <- rbind(all_sets_pint_summaries, all_pint_smrys)
-    # gc()
-    # all_sets_pint_hierarchy_summaries <- rbind(all_sets_pint_hierarchy_summaries, all_pint_hierarchy_smrys)
-    # all_sets_pint_dedup_summaries <- rbind(all_sets_pint_dedup_summaries, all_pint_dedup_smrys)
-    # all_sets_pint_unbiased_summaries <- rbind(all_sets_pint_unbiased_summaries, all_pint_unbiased_smrys)
-    # all_sets_whinter_summaries <- rbind(all_sets_whinter_summaries, all_whinter_smrys)
-    # if (use_glint) {
-    #    all_sets_glint_summaries <- rbind(all_sets_glint_summaries, all_glint_smrys)
-    # }
+    #f <- future({
+    #    roc(response = response, predict = predict)
+    #}) %plan% multicore
+    all_pint_smrys <- future({fix_na_strengths(all_pint_smrys)}) %plan% multicore
+    all_pint_dedup_smrys <- future({fix_na_strengths(all_pint_dedup_smrys)}) %plan% multicore
+    all_pint_hierarchy_smrys <- future({fix_na_strengths(all_pint_hierarchy_smrys)}) %plan% multicore
+    all_pint_unbiased_smrys <- future({fix_na_strengths(all_pint_unbiased_smrys)}) %plan% multicore
+    all_whinter_smrys <- future({fix_na_strengths(all_whinter_smrys)}) %plan% multicore
+    all_glint_smrys <- future({fix_na_strengths(all_glint_smrys)}) %plan% multicore
+    if (use_pint_pair) {
+        all_pint_pair_smrys <- future({fix_na_strengths(all_pint_pair_smrys)}) %plan% multicore
+    }
+    all_pint_smrys <- value(all_pint_smrys)
+    all_pint_dedup_smrys <- value(all_pint_dedup_smrys)
+    all_pint_hierarchy_smrys <- value(all_pint_hierarchy_smrys)
+    all_pint_unbiased_smrys <- value(all_pint_unbiased_smrys)
+    all_whinter_smrys <- value(all_whinter_smrys)
+    all_glint_smrys <- value(all_glint_smrys)
+    if (use_pint_pair) {
+        all_pint_pair_smrys <- value(all_pint_pair_smrys)
+    }
+    gc()
 
     if (use_glint) {
         all_times <- foreach(out = output, .combine = rbind) %do% {
@@ -410,7 +421,6 @@ for (bench_set in bench_sets) {
             )
         }
     }
-    # all_sets_times <- rbind(all_sets_times, all_times)
     rm(output)
     gc()
 
@@ -563,3 +573,124 @@ for (bench_set in bench_sets) {
 # ggsave(time_plot, file="plots/all_bench_times.pdf", width = 6, height = 4)
 #
 # write.csv(summary(all_sets_times), file=sprintf("times_summary_all_sets.csv", bench_set))
+
+# overall summary
+all_sets_pint_summaries <- c()
+all_sets_pint_hierarchy_summaries <- c()
+#all_sets_pint_dedup_summaries <- c()
+#all_sets_pint_unbiased_summaries <- c()
+all_sets_whinter_summaries <- c()
+all_sets_glint_summaries <- c()
+all_sets_times <- c()
+summarise_bench_sets <- c("8k_only", "wide_10k", "simulated_small_data_sample")
+#foreach (bench_set=summarise_bench_sets) %dor% {
+#    }
+#library(future)
+for (bench_set in summarise_bench_sets) {
+    gc()
+    use_glint <- TRUE
+    if (bench_set == "3way") {
+        use_pint_pair <- TRUE
+    } else {
+        use_pint_pair <- FALSE
+        all_pint_pair_smrys <- NA
+    }
+
+    dir <- paste("whinter_pint_comparison.safe", bench_set, sep = "/")
+
+    rds_files <- list.files(dir, pattern = "all.rds", recursive = TRUE, full.names = TRUE)
+
+    use_values <- c("gene_i", "gene_j", "TP", "strength", "found", "type")
+
+    output <- c()
+    output <- foreach(file = rds_files, .combine=cbind) %dopar% {
+        print(sprintf("reading file %s", file))
+        new_out <- readRDS(file)
+        print("done")
+        return(new_out)
+    }
+
+    output <- data.frame(output)
+
+    all_pint_smrys <- foreach(set = output, .combine = rbind) %do% {
+        set$pint_smry |> select(all_of(use_values))
+    }
+    all_pint_hierarchy_smrys <- foreach(set = output, .combine = rbind) %do% {
+        set$pint_hierarchy_smry |> select(all_of(use_values))
+    }
+    #all_pint_dedup_smrys <- foreach(set = output, .combine = rbind) %do% {
+    #    set$pint_dedup_smry
+    #}
+    #all_pint_unbiased_smrys <- foreach(set = output, .combine = rbind) %do% {
+    #    set$pint_unbiased_smry
+    #}
+    if (use_pint_pair) {
+        all_pint_pair_smrys <- foreach(set = output, .combine = rbind) %do% {
+            set$pint_pair_smry |> select(all_of(use_values))
+        }
+    }
+    all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% {
+        set$whinter_smry |> select(all_of(use_values))
+    }
+    if (use_glint) {
+        all_glint_smrys <- foreach(set = output, .combine = rbind) %do% {
+            set$glint_smry |> select(all_of(use_values))
+        }
+    } else {
+        all_glint_smrys <- NA
+    }
+    fix_na_strengths(all_pint_smrys)
+    #fix_na_strengths(all_pint_dedup_smrys)
+    #fix_na_strengths(all_pint_unbiased_smrys)
+    fix_na_strengths(all_pint_hierarchy_smrys)
+    fix_na_strengths(all_whinter_smrys)
+    fix_na_strengths(all_glint_smrys)
+
+    all_sets_pint_summaries <- rbind(all_sets_pint_summaries, all_pint_smrys)
+    all_sets_pint_hierarchy_summaries <- rbind(all_sets_pint_hierarchy_summaries, all_pint_hierarchy_smrys)
+    #all_sets_pint_dedup_summaries <- rbind(all_sets_pint_dedup_summaries, all_pint_dedup_smrys)
+    #all_sets_pint_unbiased_summaries <- rbind(all_sets_pint_unbiased_summaries, all_pint_unbiased_smrys)
+    all_sets_whinter_summaries <- rbind(all_sets_whinter_summaries, all_whinter_smrys)
+    if (use_glint) {
+       all_sets_glint_summaries <- rbind(all_sets_glint_summaries, all_glint_smrys)
+    }
+
+    #if (use_glint) {
+    #    all_times <- foreach(out = output, .combine = rbind) %do% {
+    #        data.frame(
+    #            pint = out$pint_time,
+    #            pint_hierarchy = out$pint_hierarchy_time,
+    #            pint_dedup = out$pint_dedup_time,
+    #            pint_unbiased = out$pint_unbiased_time,
+    #            whinter = out$whinter_time,
+    #            glint = out$glint_time
+    #        )
+    #    }
+    #} else {
+    #    all_times <- foreach(out = output, .combine = rbind) %do% {
+    #        data.frame(
+    #            pint = out$pint_time,
+    #            pint_hierarchy = out$pint_hierarchy_time,
+    #            pint_dedup = out$pint_dedup_time,
+    #            pint_unbiased = out$pint_unbiased_time,
+    #            whinter = out$whinter_time
+    #        )
+    #    }
+    #}
+    all_sets_times <- rbind(all_sets_times, all_times)
+    rm(output)
+    gc(verbose=FALSE)
+}
+
+all_sets_pint_dedup_summaries <- c()
+all_sets_pint_unbiased_summaries <- c()
+plot_rocs(
+    all_sets_pint_summaries, all_sets_pint_hierarchy_summaries, all_sets_pint_dedup_summaries,
+    all_sets_pint_unbiased_summaries, all_sets_glint_summaries, all_sets_whinter_summaries, use_glint, "all",
+    TRUE, sprintf("plots/rocs/overall_comparison_rocs.pdf")
+)
+plot_rocs_anyfound(
+    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "all",
+    sprintf("plots/rocs/overall_comparison_roc_anyfound.pdf")
+)
