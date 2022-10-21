@@ -10,14 +10,14 @@ library(future)
 
 source("summary_functions.R")
 
-registerDoMC(cores = 8)
+registerDoMC(cores = 10)
 
 bench_sets <- c("simulated_small_data_sample", "3way", "8k_only", "wide_only_10k")
 # bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k")
 # bench_sets <- c("wide_only_10k")
 #bench_sets <- c("3way")
 
-options(future.globals.maxSize = 4 * 1024^3)
+options(future.globals.maxSize = 16 * 1024^3)
 get_roc_set_future <- function(response, predict) {
     f <- future({
         roc(response = response, predict = predict)
@@ -132,7 +132,7 @@ plot_rocs_anyfound <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pin
         pint <- all_pint_smrys |> filter(type == use_type)
         pint_hierarchy <- all_pint_hierarchy_smrys |> filter(type == use_type)
         # pint_dedup <- all_pint_dedup_smrys |> filter(type == use_type)
-        pint_unbiased <- all_pint_unbiased_smrys |> filter(type == use_type)
+        #pint_unbiased <- all_pint_unbiased_smrys |> filter(type == use_type)
         if (use_glint) {
             glint <- all_glint_smrys |> filter(type == use_type)
         }
@@ -144,7 +144,7 @@ plot_rocs_anyfound <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pin
         pint <- all_pint_smrys
         pint_hierarchy <- all_pint_hierarchy_smrys
         # pint_dedup <- all_pint_dedup_smrys
-        pint_unbiased <- all_pint_unbiased_smrys
+        #pint_unbiased <- all_pint_unbiased_smrys
         if (use_glint) {
             glint <- all_glint_smrys
         }
@@ -343,35 +343,40 @@ for (bench_set in bench_sets) {
     output <- foreach(file = rds_files, .combine=cbind) %dopar% {
         print(sprintf("reading file %s", file))
         new_out <- readRDS(file)
+        new_out$file <- file
         print("done")
         return(new_out)
     }
     output <- data.frame(output)
 
-    use_values <- c("gene_i", "gene_j", "TP", "strength", "found", "type")
+    if (bench_set == "3way") {
+        use_values <- c("gene_i", "gene_j", "gene_k", "TP", "strength", "found", "type")
+    } else {
+        use_values <- c("gene_i", "gene_j", "TP", "strength", "found", "type")
+    }
     all_pint_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_smry |> select(all_of(use_values))
+        set$pint_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
     all_pint_hierarchy_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_hierarchy_smry |> select(all_of(use_values))
+        set$pint_hierarchy_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
     all_pint_dedup_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_dedup_smry |> select(all_of(use_values))
+        set$pint_dedup_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
     all_pint_unbiased_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$pint_unbiased_smry |> select(all_of(use_values))
+        set$pint_unbiased_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
     if (use_pint_pair) {
         all_pint_pair_smrys <- foreach(set = output, .combine = rbind) %do% {
-            set$pint_pair_smry |> select(all_of(use_values))
+            set$pint_pair_smry |> select(all_of(use_values)) |> mutate(file=set$file)
         }
     }
     all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% {
-        set$whinter_smry |> select(all_of(use_values))
+        set$whinter_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
     if (use_glint) {
         all_glint_smrys <- foreach(set = output, .combine = rbind) %do% {
-            set$glint_smry |> select(all_of(use_values))
+            set$glint_smry |> select(all_of(use_values)) |> mutate(file=set$file)
         }
     } else {
         all_glint_smrys <- NA
@@ -478,64 +483,64 @@ for (bench_set in bench_sets) {
     )
 
     # plot rocs including only the effects found by at least one method
-    plot_rocs_anyfound(
-        all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
-        all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "all",
-        sprintf("plots/rocs/all_comparison_roc_%s_anyfound.pdf", bench_set)
-    )
-    plot_rocs_anyfound(
-        all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
-        all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "main",
-        sprintf("plots/rocs/main_comparison_roc_%s_anyfound.pdf", bench_set)
-    )
-    plot_rocs_anyfound(
-        all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
-        all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "interaction",
-        sprintf("plots/rocs/int_comparison_roc_%s_anyfound.pdf", bench_set)
-    )
-    ## anyfound using equiv_tp
-    plot_rocs_anyfound(
-        all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
-        all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "all",
-        sprintf("plots/rocs/all_comparison_roc_%s_equiv_tp_anyfound.pdf", bench_set), use_equiv_tp = TRUE
-    )
-    plot_rocs_anyfound(
-        all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
-        all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "main",
-        sprintf("plots/rocs/main_comparison_roc_%s_equiv_tp_anyfound.pdf", bench_set), use_equiv_tp = TRUE
-    )
-    plot_rocs_anyfound(
-        all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
-        all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "interaction",
-        sprintf("plots/rocs/int_comparison_roc_%s_equiv_tp_anyfound.pdf", bench_set), use_equiv_tp = TRUE
-    )
+    #plot_rocs_anyfound(
+    #    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    #    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "all",
+    #    sprintf("plots/rocs/all_comparison_roc_%s_anyfound.pdf", bench_set)
+    #)
+    #plot_rocs_anyfound(
+    #    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    #    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "main",
+    #    sprintf("plots/rocs/main_comparison_roc_%s_anyfound.pdf", bench_set)
+    #)
+    #plot_rocs_anyfound(
+    #    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    #    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "interaction",
+    #    sprintf("plots/rocs/int_comparison_roc_%s_anyfound.pdf", bench_set)
+    #)
+    ### anyfound using equiv_tp
+    #plot_rocs_anyfound(
+    #    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    #    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "all",
+    #    sprintf("plots/rocs/all_comparison_roc_%s_equiv_tp_anyfound.pdf", bench_set), use_equiv_tp = TRUE
+    #)
+    #plot_rocs_anyfound(
+    #    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    #    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "main",
+    #    sprintf("plots/rocs/main_comparison_roc_%s_equiv_tp_anyfound.pdf", bench_set), use_equiv_tp = TRUE
+    #)
+    #plot_rocs_anyfound(
+    #    all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
+    #    all_pint_unbiased_smrys, all_pint_pair_smrys, all_glint_smrys, all_whinter_smrys, use_glint, use_pint_pair, "interaction",
+    #    sprintf("plots/rocs/int_comparison_roc_%s_equiv_tp_anyfound.pdf", bench_set), use_equiv_tp = TRUE
+    #)
 
     # equiv_tp
     ## all
-    plot_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, all_glint_smrys, all_whinter_smrys, use_glint,
-        "all", TRUE, sprintf("plots/rocs/all_comparison_roc_equiv_%s.pdf", bench_set),
-        use_equiv_tp = TRUE
-    )
-    ## found_only
-    plot_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, all_glint_smrys, all_whinter_smrys, use_glint,
-        "all", FALSE, sprintf("plots/rocs/all_comparison_roc_equiv_%s_FoundOnly.pdf", bench_set),
-        use_equiv_tp = TRUE
-    )
+    #plot_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, all_glint_smrys, all_whinter_smrys, use_glint,
+    #    "all", TRUE, sprintf("plots/rocs/all_comparison_roc_equiv_%s.pdf", bench_set),
+    #    use_equiv_tp = TRUE
+    #)
+    ### found_only
+    #plot_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, all_glint_smrys, all_whinter_smrys, use_glint,
+    #    "all", FALSE, sprintf("plots/rocs/all_comparison_roc_equiv_%s_FoundOnly.pdf", bench_set),
+    #    use_equiv_tp = TRUE
+    #)
     # threeway
     if (bench_set == "3way") {
         plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
             sprintf("plots/rocs/3way_comparison_roc_%s.pdf", bench_set),
             use_equiv_tp = FALSE
         )
-        plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
-            sprintf("plots/rocs/3way_comparison_roc_equiv_%s.pdf", bench_set),
-            use_equiv_tp = TRUE
-        )
-        plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, FALSE,
-            sprintf("plots/rocs/3way_comparison_roc_equiv_%s_FoundOnly.pdf", bench_set),
-            use_equiv_tp = TRUE
-        )
-        plot_pint_equiv_vs_tp(all_pint_smrys, FALSE, sprintf("plots/rocs/3way_comparison_roc_equiv_vs_tp_%s_FoundOnly.pdf", bench_set))
+        #plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, TRUE,
+        #    sprintf("plots/rocs/3way_comparison_roc_equiv_%s.pdf", bench_set),
+        #    use_equiv_tp = TRUE
+        #)
+        #plot_pint_3way_rocs(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys, all_pint_unbiased_smrys, FALSE,
+        #    sprintf("plots/rocs/3way_comparison_roc_equiv_%s_FoundOnly.pdf", bench_set),
+        #    use_equiv_tp = TRUE
+        #)
+        #plot_pint_equiv_vs_tp(all_pint_smrys, FALSE, sprintf("plots/rocs/3way_comparison_roc_equiv_vs_tp_%s_FoundOnly.pdf", bench_set))
     }
 
     # set times
