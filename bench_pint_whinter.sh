@@ -18,6 +18,8 @@ run_sets_on_methods() {
       if ! [ -d $set_dir ]; then
         mkdir -p $set_dir
       fi
+      #echo taskset -c $taskset_threads bash -c \"./process_rds_whinter.R $bench_sets_dir/$bench_set $set_dir $methods $num_features $depth $use_cores\"
+      #exit
       if ! [ -f $set_dir/all.rds ]; then
         taskset -c $taskset_threads bash -c "./process_rds_whinter.R $bench_sets_dir/$bench_set $set_dir $methods $num_features $depth $use_cores" &> $set_dir/log.txt
       else
@@ -48,17 +50,18 @@ taskset_threads="0"
 use_cores="1"
 run_sets_on_methods
 
+## new wide comparison
 depth=2
 num_features=5000
-sets="8k_only"
+sets="wide_only_10k"
 methods="all"
 taskset_threads="0-95"
 use_cores="48"
 run_sets_on_methods
 
-## new wide comparison
+depth=2
 num_features=5000
-sets="wide_only_10k"
+sets="8k_only"
 methods="all"
 taskset_threads="0-95"
 use_cores="48"
