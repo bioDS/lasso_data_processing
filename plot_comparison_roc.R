@@ -12,7 +12,7 @@ source("summary_functions.R")
 
 registerDoMC(cores = 10)
 
-bench_sets <- c("simulated_small_data_sample", "3way", "8k_only", "wide_only_10k")
+bench_sets <- c("simulated_small_data_sample", "3way", "wide_only_10k", "8k_only")
 # bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k")
 # bench_sets <- c("wide_only_10k")
 #bench_sets <- c("3way")
@@ -120,6 +120,13 @@ plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_s
         annotate("text", x = 0.2, y = 0.2, label = sprintf("Whinter auc: %.2f", round(value(whinter_roc_future)$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.1, label = glint_annotation)
     ggsave(roc_plot, file = output_filename, width = 7, height = 5)
+    roc_df = data.frame(
+        Pint = value(pint_roc_future)$auc,
+        Pint_Hierarchy = value(pint_hierarchy_roc_future)$auc,
+        Whinter = value(whinter_roc_future)$auc,
+        Glinternet = value(glint_roc_future)$auc
+    )
+    write.csv(roc_df, sprintf("%s-values.csv", output_filename))
 }
 
 plot_rocs_anyfound <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_smrys,
@@ -295,6 +302,12 @@ plot_pint_3way_rocs <- function(pint, pint_dedup, pint_hierarchy, pint_unbiased,
         annotate("text", x = 0.2, y = 0.2, label = sprintf("Pint deduplicated auc: %.2f", round(pint_dedup_roc$auc, digits = 2)))
     ## annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
     ggsave(roc_plot, file = output_filename, width = 7, height = 5)
+    roc_df <- data.frame(
+        Pint = pint_roc$auc,
+        pint_hierarchy = pint_hierarchy_roc$auc,
+        pint_dedup = pint_dedup_roc$auc
+    )
+    write.csv(roc_df, sprintf("%s.csv", output_filename)))
 }
 
 plot_pint_equiv_vs_tp <- function(pint, include_FN, output_filename) {
@@ -326,6 +339,14 @@ fix_na_strengths <- function(smry) {
     return(smry)
 }
 
+convert_time <- function(time) {
+    if (length(time) > 1) {
+        return(time[[3]])
+    } else {
+        return(time[[1]])
+    }
+}
+
 for (bench_set in bench_sets) {
     use_glint <- TRUE
     if (bench_set == "3way") {
@@ -335,7 +356,7 @@ for (bench_set in bench_sets) {
         all_pint_pair_smrys <- NA
     }
 
-    dir <- paste("whinter_pint_comparison.safe", bench_set, sep = "/")
+    dir <- paste("whinter_pint_comparison", bench_set, sep = "/")
 
     rds_files <- list.files(dir, pattern = "all.rds", recursive = TRUE, full.names = TRUE)
 
@@ -407,25 +428,26 @@ for (bench_set in bench_sets) {
     if (use_glint) {
         all_times <- foreach(out = output, .combine = rbind) %do% {
             data.frame(
-                pint = out$pint_time[3],
-                pint_hierarchy = out$pint_hierarchy_time[3],
-                pint_dedup = out$pint_dedup_time[3],
-                pint_unbiased = out$pint_unbiased_time[3],
-                whinter = out$whinter_time[3],
-                glint = out$glint_time[3]
+                pint = convert_time(out$pint_time),
+                pint_hierarchy = convert_time(out$pint_hierarchy_time),
+                pint_dedup = convert_time(out$pint_dedup_time),
+                pint_unbiased = convert_time(out$pint_unbiased_time),
+                whinter = convert_time(out$whinter_time),
+                glint = convert_time(out$glint_time)
             )
         }
     } else {
         all_times <- foreach(out = output, .combine = rbind) %do% {
             data.frame(
-                pint = out$pint_time[3],
-                pint_hierarchy = out$pint_hierarchy_time[3],
-                pint_dedup = out$pint_dedup_time[3],
-                pint_unbiased = out$pint_unbiased_time[3],
-                whinter = out$whinter_time[3]
+                pint = convert_time(out$pint_time),
+                pint_hierarchy = convert_time(out$pint_hierarchy_time),
+                pint_dedup = convert_time(out$pint_dedup_time),
+                pint_unbiased = convert_time(out$pint_unbiased_time),
+                whinter = convert_time(out$whinter_time)
             )
         }
     }
+
     rm(output)
     gc()
 
