@@ -12,10 +12,10 @@ source("summary_functions.R")
 
 registerDoMC(cores = 5)
 
-#bench_sets <- c("simulated_small_data_sample", "3way", "wide_only_10k", "8k_only")
+bench_sets <- c("simulated_small_data_sample", "3way", "wide_only_10k", "8k_only")
 # bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k")
 # bench_sets <- c("wide_only_10k")
-bench_sets <- c("wide_only_10k")
+#bench_sets <- c("wide_only_10k")
 
 options(future.globals.maxSize = 16 * 1024^3)
 get_roc_set_future <- function(response, predict) {
@@ -361,14 +361,16 @@ for (bench_set in bench_sets) {
     rds_files <- list.files(dir, pattern = "all.rds", recursive = TRUE, full.names = TRUE)
 
     output <- c()
-    output <- foreach(file = rds_files, .combine=cbind) %dopar% {
+    output <- foreach(file = rds_files, .combine=cbind) %do% {
         print(sprintf("reading file %s", file))
         new_out <- readRDS(file)
         new_out$file <- file
         print("done")
         return(new_out)
     }
+    gc()
     output <- data.frame(output)
+    gc()
 
     if (bench_set == "3way") {
         use_values <- c("gene_i", "gene_j", "gene_k", "TP", "strength", "found", "type")
@@ -647,7 +649,7 @@ for (bench_set in summarise_bench_sets) {
     use_values <- c("gene_i", "gene_j", "TP", "strength", "found", "type")
 
     output <- c()
-    output <- foreach(file = rds_files, .combine=cbind) %dopar% {
+    output <- foreach(file = rds_files, .combine=cbind) %do% {
         print(sprintf("reading file %s", file))
         new_out <- readRDS(file)
         print("done")
