@@ -10,18 +10,18 @@ library(future)
 
 source("summary_functions.R")
 
-registerDoMC(cores = 10)
+registerDoMC(cores = 5)
 
-bench_sets <- c("simulated_small_data_sample", "3way", "wide_only_10k", "8k_only")
+#bench_sets <- c("simulated_small_data_sample", "3way", "wide_only_10k", "8k_only")
 # bench_sets <- c("simulated_small_data_sample", "8k_only", "wide_only_10k")
 # bench_sets <- c("wide_only_10k")
-#bench_sets <- c("3way")
+bench_sets <- c("wide_only_10k")
 
 options(future.globals.maxSize = 16 * 1024^3)
 get_roc_set_future <- function(response, predict) {
     f <- future({
         roc(response = response, predict = predict)
-    }) %plan% multicore
+    }) %plan% sequential
     return(f)
 }
 
@@ -119,7 +119,7 @@ plot_rocs <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pint_dedup_s
         ## annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.2, label = sprintf("Whinter auc: %.2f", round(value(whinter_roc_future)$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.1, label = glint_annotation)
-    ggsave(roc_plot, file = output_filename, width = 7, height = 5)
+    ggsave(roc_plot, file = output_filename, width = 6, height = 4)
     roc_df = data.frame(
         Pint = value(pint_roc_future)$auc,
         Pint_Hierarchy = value(pint_hierarchy_roc_future)$auc,
@@ -261,7 +261,7 @@ plot_rocs_anyfound <- function(all_pint_smrys, all_pint_hierarchy_smrys, all_pin
         annotate("text", x = 0.2, y = 0.3, label = sprintf("Whinter auc: %.2f", round(value(whinter_roc_future)$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.2, label = glint_annotation) +
         annotate("text", x = 0.2, y = 0.1, label = pint_pair_annotation)
-    ggsave(roc_plot, file = output_filename, width = 7, height = 5)
+    ggsave(roc_plot, file = output_filename, width = 6, height = 4)
 }
 
 plot_pint_3way_rocs <- function(pint, pint_dedup, pint_hierarchy, pint_unbiased, include_FN, output_filename, use_equiv_tp) {
@@ -301,13 +301,13 @@ plot_pint_3way_rocs <- function(pint, pint_dedup, pint_hierarchy, pint_unbiased,
         annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint hierarchy auc: %.2f", round(pint_hierarchy_roc$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.2, label = sprintf("Pint deduplicated auc: %.2f", round(pint_dedup_roc$auc, digits = 2)))
     ## annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint_Unbiased auc: %.2f", round(pint_unbiased_roc$auc, digits = 2))) +
-    ggsave(roc_plot, file = output_filename, width = 7, height = 5)
+    ggsave(roc_plot, file = output_filename, width = 6, height = 4)
     roc_df <- data.frame(
         Pint = pint_roc$auc,
         pint_hierarchy = pint_hierarchy_roc$auc,
         pint_dedup = pint_dedup_roc$auc
     )
-    write.csv(roc_df, sprintf("%s.csv", output_filename)))
+    write.csv(roc_df, sprintf("%s.csv", output_filename))
 }
 
 plot_pint_equiv_vs_tp <- function(pint, include_FN, output_filename) {
@@ -329,7 +329,7 @@ plot_pint_equiv_vs_tp <- function(pint, include_FN, output_filename) {
         geom_segment(x = -1, y = 0, xend = 0, yend = 1, color = "#4c72b0") +
         annotate("text", x = 0.2, y = 0.4, label = sprintf("Pint auc: %.2f", round(pint_tp_roc$auc, digits = 2))) +
         annotate("text", x = 0.2, y = 0.3, label = sprintf("Pint equiv_tp auc: %.2f", round(pint_equiv_roc$auc, digits = 2)))
-    ggsave(roc_plot, file = output_filename, width = 7, height = 5)
+    ggsave(roc_plot, file = output_filename, width = 6, height = 4)
 }
 
 fix_na_strengths <- function(smry) {
@@ -378,72 +378,88 @@ for (bench_set in bench_sets) {
     all_pint_smrys <- foreach(set = output, .combine = rbind) %do% {
         set$pint_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
+    gc()
     all_pint_hierarchy_smrys <- foreach(set = output, .combine = rbind) %do% {
         set$pint_hierarchy_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
+    gc()
     all_pint_dedup_smrys <- foreach(set = output, .combine = rbind) %do% {
         set$pint_dedup_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
+    gc()
     all_pint_unbiased_smrys <- foreach(set = output, .combine = rbind) %do% {
         set$pint_unbiased_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
+    gc()
     if (use_pint_pair) {
         all_pint_pair_smrys <- foreach(set = output, .combine = rbind) %do% {
             set$pint_pair_smry |> select(all_of(use_values)) |> mutate(file=set$file)
         }
+        gc()
     }
     all_whinter_smrys <- foreach(set = output, .combine = rbind) %do% {
         set$whinter_smry |> select(all_of(use_values)) |> mutate(file=set$file)
     }
+    gc()
     if (use_glint) {
         all_glint_smrys <- foreach(set = output, .combine = rbind) %do% {
             set$glint_smry |> select(all_of(use_values)) |> mutate(file=set$file)
         }
+        gc()
     } else {
         all_glint_smrys <- NA
     }
     #f <- future({
     #    roc(response = response, predict = predict)
     #}) %plan% multicore
-    all_pint_smrys <- future({fix_na_strengths(all_pint_smrys)}) %plan% multicore
-    all_pint_dedup_smrys <- future({fix_na_strengths(all_pint_dedup_smrys)}) %plan% multicore
-    all_pint_hierarchy_smrys <- future({fix_na_strengths(all_pint_hierarchy_smrys)}) %plan% multicore
-    all_pint_unbiased_smrys <- future({fix_na_strengths(all_pint_unbiased_smrys)}) %plan% multicore
-    all_whinter_smrys <- future({fix_na_strengths(all_whinter_smrys)}) %plan% multicore
-    all_glint_smrys <- future({fix_na_strengths(all_glint_smrys)}) %plan% multicore
+    #all_pint_smrys <- future({fix_na_strengths(all_pint_smrys)}) %plan% multicore
+    #all_pint_dedup_smrys <- future({fix_na_strengths(all_pint_dedup_smrys)}) %plan% multicore
+    #all_pint_hierarchy_smrys <- future({fix_na_strengths(all_pint_hierarchy_smrys)}) %plan% multicore
+    #all_pint_unbiased_smrys <- future({fix_na_strengths(all_pint_unbiased_smrys)}) %plan% multicore
+    #all_whinter_smrys <- future({fix_na_strengths(all_whinter_smrys)}) %plan% multicore
+    #all_glint_smrys <- future({fix_na_strengths(all_glint_smrys)}) %plan% multicore
+    #if (use_pint_pair) {
+    #    all_pint_pair_smrys <- future({fix_na_strengths(all_pint_pair_smrys)}) %plan% multicore
+    #}
+    #all_pint_smrys <- value(all_pint_smrys)
+    #all_pint_dedup_smrys <- value(all_pint_dedup_smrys)
+    #all_pint_hierarchy_smrys <- value(all_pint_hierarchy_smrys)
+    #all_pint_unbiased_smrys <- value(all_pint_unbiased_smrys)
+    #all_whinter_smrys <- value(all_whinter_smrys)
+    #all_glint_smrys <- value(all_glint_smrys)
+    #if (use_pint_pair) {
+    #    all_pint_pair_smrys <- value(all_pint_pair_smrys)
+    #}
+    all_pint_smrys <- fix_na_strengths(all_pint_smrys)
+    all_pint_dedup_smrys <- fix_na_strengths(all_pint_dedup_smrys)
+    all_pint_hierarchy_smrys <- fix_na_strengths(all_pint_hierarchy_smrys)
+    all_pint_unbiased_smrys <- fix_na_strengths(all_pint_unbiased_smrys)
+    all_whinter_smrys <- fix_na_strengths(all_whinter_smrys)
+    all_glint_smrys <- fix_na_strengths(all_glint_smrys)
     if (use_pint_pair) {
-        all_pint_pair_smrys <- future({fix_na_strengths(all_pint_pair_smrys)}) %plan% multicore
-    }
-    all_pint_smrys <- value(all_pint_smrys)
-    all_pint_dedup_smrys <- value(all_pint_dedup_smrys)
-    all_pint_hierarchy_smrys <- value(all_pint_hierarchy_smrys)
-    all_pint_unbiased_smrys <- value(all_pint_unbiased_smrys)
-    all_whinter_smrys <- value(all_whinter_smrys)
-    all_glint_smrys <- value(all_glint_smrys)
-    if (use_pint_pair) {
-        all_pint_pair_smrys <- value(all_pint_pair_smrys)
+        all_pint_pair_smrys <- fix_na_strengths(all_pint_pair_smrys)
     }
     gc()
 
     if (use_glint) {
         all_times <- foreach(out = output, .combine = rbind) %do% {
             data.frame(
-                pint = convert_time(out$pint_time),
-                pint_hierarchy = convert_time(out$pint_hierarchy_time),
-                pint_dedup = convert_time(out$pint_dedup_time),
-                pint_unbiased = convert_time(out$pint_unbiased_time),
-                whinter = convert_time(out$whinter_time),
-                glint = convert_time(out$glint_time)
+                Pint = convert_time(out$pint_time),
+                "Pint hierarchy" = convert_time(out$pint_hierarchy_time),
+                "Pint deduplicated" = convert_time(out$pint_dedup_time),
+                "Pint unbiased" = convert_time(out$pint_unbiased_time),
+                WHInter = convert_time(out$whinter_time),
+                Glinternet = convert_time(out$glint_time)
             )
         }
     } else {
         all_times <- foreach(out = output, .combine = rbind) %do% {
             data.frame(
-                pint = convert_time(out$pint_time),
-                pint_hierarchy = convert_time(out$pint_hierarchy_time),
-                pint_dedup = convert_time(out$pint_dedup_time),
-                pint_unbiased = convert_time(out$pint_unbiased_time),
-                whinter = convert_time(out$whinter_time)
+                Pint = convert_time(out$pint_time),
+                "Pint hierarchy" = convert_time(out$pint_hierarchy_time),
+                "Pint deduplicated" = convert_time(out$pint_dedup_time),
+                "Pint unbiased" = convert_time(out$pint_unbiased_time),
+                WHInter = convert_time(out$whinter_time),
             )
         }
     }
@@ -567,15 +583,16 @@ for (bench_set in bench_sets) {
 
     # set times
     if (use_glint) {
-        melted_times <- melt(all_times |> select(pint, pint_hierarchy, whinter, glint), value.name = "Time", variable.name = "Method")
+        melted_times <- melt(all_times |> select(Pint, "Pint.hierarchy", WHInter, Glinternet), value.name = "Time", variable.name = "Method")
     } else {
-        melted_times <- melt(all_times |> select(pint, pint_hierarchy, whinter), value.name = "Time", variable.name = "Method")
+        melted_times <- melt(all_times |> select(Pint, "Pint.hierarchy", WHInter), value.name = "Time", variable.name = "Method")
     }
     time_plot <- ggplot(melted_times, aes(x = Method, y = Time)) +
         geom_boxplot() +
         theme_bw() +
         scale_y_continuous(trans = "log2") +
         ylab("Time (s)") +
+        scale_x_discrete(labels=c('Pint', 'Pint (hier)', 'WHInter', 'Glinternet')) +
         expand_limits(y = 0)
     ggsave(time_plot, file = sprintf("plots/bench_times_%s.pdf", bench_set), width = 3, height = 3)
 }
